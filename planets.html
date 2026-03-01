@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Solaris - Full Control Edition</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Inter', sans-serif; color: white; }
+        canvas { display: block; touch-action: none; }
+        .ui-panel { 
+            position: absolute; top: 20px; right: 20px; 
+            background: rgba(10, 10, 15, 0.95); padding: 20px; 
+            border-radius: 12px; border: 1px solid #00ffcc44; width: 220px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+        }
+        input { width: 100%; margin: 10px 0; cursor: pointer; accent-color: #00ffcc; }
+        label { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #00ffcc; display: block; }
+        button { 
+            width: 100%; padding: 10px; background: #111; color: #fff; 
+            border: 1px solid #333; border-radius: 6px; cursor: pointer; margin-top: 5px;
+        }
+        button:hover { background: #00ffcc; color: #000; }
+        #popCount { position: absolute; bottom: 20px; left: 20px; font-size: 10px; color: #555; }
+    </style>
+</head>
+<body>
+
+<div class="ui-panel">
+    <label>Time Speed: <span id="tDisp">1.0</span>x</label>
+    <input type="range" id="tSlider" min="0" max="4" step="0.1" value="1">
+
+    <label>Star Mass: <span id="mDisp">5000</span></label>
+    <input type="range" id="massSlider" min="500" max="150000" step="500" value="5000">
+
+    <label>Debris Count: <span id="dDisp">4</span></label>
+    <input type="range" id="debrisSlider" min="2" max="12" step="1" value="4">
+
+    <label>Accretion Time: <span id="aDisp">10</span>s</label>
+    <input type="range" id="accSlider" min="1" max="20" step="1" value="10">
+
+    <label>Trail Length: <span id="pDisp">80</span></label>
+    <input type="range" id="persistSlider" min="0" max="500" step="10" value="80">
+
+    <button onclick="resetSim()">System Reset</button>
+</div>
+<div id="popCount">Planets: 0 / 150</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const popDisplay = document.getElementById('popCount');
+const massSlider = document.getElementById('massSlider');
+const mDisp = document.getElementById('mDisp');
+
+let planets = [];
+let star = { x: 0, y: 0, mass: 5000, radius: 20, isBlackHole: false };
+let timeScale = 1.0;
+let maxHistory = 80;
+let debrisCount = 4;
+let accretionLimit = 600; // Default 10s at 60fps
+let G = 1.2;
+const MAX_PLANETS = 150;
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    star.x = canvas.width / 2;
+    star.y = canvas.height / 2;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function updateStarUI() {
+    const displayMass = Math.floor(star.mass);
+    mDisp.innerText = displayMass;
+    massSlider.value = displayMass;
+    if (star.mass >= 150000) {
+        star.isBlackHole = true;
+        star.radius = 8;
+        G = 2.5;
+    } else {
+        star.isBlackHole = false;
+        star.radius = 10 + Math.pow(star.mass, 0.38);
+        G = 1.2;
+    }
+}
+
+massSlider.oninput = (e) => { 
+    star.mass = parseInt(e.target.value);
+    updateStarUI();
+};
+
+document.getElementById('tSlider').oninput = (e) => {
+    timeScale = parseFloat(e.target.value);
+    document.getElementById('tDisp').innerText = timeScale.toFixed(1);
+};
+
+document.getElementById('debrisSlider').oninput = (e) => {
+    debrisCount = parseInt(e.target.value);
+    document.getElementById('dDisp').innerText = debrisCount;
+};
+
+document.getElementById('accSlider').oninput = (e) => {
+    accretionLimit = parseInt(e.target.value) * 60;
+    document.getElementById('aDisp').innerText = e.target.value;
+};
+
+document.getElementById('persistSlider').oninput = (e) => {
+    maxHistory = parseInt(e.target.value);
+    document.getElementById('pDisp').innerText = maxHistory;
+};
+
+function resetSim() { 
+    planets = []; 
+    star.mass = 5000; 
+    updateStarUI(); 
+}
+
+function createPlanet(x, y, r, vx, vy, color, cooldown = 0) {
+    return { x, y, radius: r, mass: Math.PI * r * r, vx, vy, color, history: [], dead: false, cooldown, accTimer: 0 };
+}
+
+let isDragging = false, mStart = {x:0, y:0}, mCurrent = {x:0, y:0};
+canvas.addEventListener('mousedown', (e) => {
+    if (e.button === 0) { isDragging = true; mStart = {x: e.clientX, y: e.clientY}; mCurrent = {x: e.clientX, y: e.clientY}; }
+    else if (e.button === 2) planets = planets.filter(p => Math.hypot(p.x - e.clientX, p.y - e.clientY) > p.radius + 15);
+});
+
+window.addEventListener('mousemove', (e) => { if (isDragging) mCurrent = {x: e.clientX, y: e.clientY}; });
+window.addEventListener('mouseup', (e) => {
+    if (isDragging && e.button === 0 && planets.length < MAX_PLANETS) {
+        const d = Math.hypot(mCurrent.x - mStart.x, mCurrent.y - mStart.y);
+        const r = Math.max(2, d / 6); 
+        const dx = mStart.x - star.x, dy = mStart.y - star.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const speed = Math.sqrt((G * star.mass) / dist);
+        planets.push(createPlanet(mStart.x, mStart.y, r, -dy/dist*speed, dx/dist*speed, `hsl(${Math.random()*360},90%,75%)`));
+        isDragging = false;
+    }
+});
+canvas.oncontextmenu = (e) => e.preventDefault();
+
+function shatter(p1, p2) {
+    p1.dead = true; p2.dead = true;
+    if (planets.length > MAX_PLANETS - debrisCount) return;
+
+    const combinedMass = (p1.mass + p2.mass) * 0.85;
+    const fragMass = combinedMass / debrisCount;
+    const fragRadius = Math.max(1, Math.sqrt(fragMass / Math.PI));
+
+    for(let i=0; i < debrisCount; i++) {
+        const angle = (Math.PI * 2 / debrisCount) * i;
+        const kick = 0.8 + Math.random() * 1.5;
+        const vx = (p1.vx + p2.vx)/2 + Math.cos(angle) * kick;
+        const vy = (p1.vy + p2.vy)/2 + Math.sin(angle) * kick;
+        planets.push(createPlanet(p1.x, p1.y, fragRadius, vx, vy, p1.color, 40));
+    }
+}
+
+function physics() {
+    const steps = 6;
+    const dt = (0.1 * timeScale) / steps;
+    for (let s = 0; s < steps; s++) {
+        for (let i = 0; i < planets.length; i++) {
+            let p = planets[i]; if (p.dead) continue;
+            const dxS = star.x - p.x, dyS = star.y - p.y;
+            const dS2 = dxS*dxS + dyS*dyS, dS = Math.sqrt(dS2);
+            
+            if (dS < star.radius + p.radius * 0.3) { 
+                p.dead = true; 
+                if (star.mass < 150000) { star.mass += p.mass * 0.25; updateStarUI(); }
+                continue; 
+            }
+
+            p.vx += (G * star.mass * dxS / dS2 / dS) * dt;
+            p.vy += (G * star.mass * dyS / dS2 / dS) * dt;
+
+            let inProximity = false;
+
+            for (let j = i + 1; j < planets.length; j++) {
+                let o = planets[j]; if (o.dead) continue;
+                const dx = o.x - p.x, dy = o.y - p.y;
+                const d2 = dx*dx + dy*dy, d = Math.sqrt(d2);
+
+                if (d < (p.radius + o.radius)) {
+                    if (p.cooldown <= 0 && o.cooldown <= 0) {
+                        const ratio = Math.max(p.radius, o.radius) / Math.min(p.radius, o.radius);
+                        if (ratio > 2.2) {
+                            const big = p.radius > o.radius ? p : o, small = p.radius > o.radius ? o : p;
+                            big.mass += small.mass; big.radius = Math.sqrt(big.mass / Math.PI);
+                            small.dead = true;
+                        } else { 
+                            shatter(p, o); break; 
+                        }
+                    }
+                } else {
+                    const f = (G * p.mass * o.mass) / d2;
+                    p.vx += (f * dx / d) / p.mass * dt; p.vy += (f * dy / d) / p.mass * dt;
+                    o.vx -= (f * dx / d) / o.mass * dt; o.vy -= (f * dy / d) / o.mass * dt;
+
+                    // Accretion Proximity logic
+                    if (d < (p.radius + o.radius) * 3) {
+                        inProximity = true;
+                        p.accTimer++;
+                        if (p.accTimer > accretionLimit) {
+                            p.mass += o.mass; p.radius = Math.sqrt(p.mass / Math.PI);
+                            o.dead = true; p.accTimer = 0;
+                        }
+                    }
+                }
+            }
+            if (!inProximity) p.accTimer = Math.max(0, p.accTimer - 2);
+            p.x += p.vx * dt; p.y += p.vy * dt;
+        }
+        planets = planets.filter(p => !p.dead);
+    }
+    planets.forEach(p => {
+        if (p.cooldown > 0) p.cooldown--;
+        p.history.push({x: p.x, y: p.y});
+        if (p.history.length > maxHistory) p.history.shift();
+    });
+    popDisplay.innerText = `Planets: ${planets.length} / ${MAX_PLANETS}`;
+}
+
+function draw() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0; ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (star.isBlackHole) {
+        ctx.shadowBlur = 60; ctx.shadowColor = "#ffffff";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(star.x, star.y, 40, 0, Math.PI*2); ctx.stroke();
+        ctx.shadowBlur = 30; ctx.shadowColor = "#ffffff";
+        ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(star.x, star.y, star.radius, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 10; ctx.strokeStyle = "#fff"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(star.x, star.y, star.radius, 0, Math.PI*2); ctx.stroke();
+    } else {
+        ctx.shadowBlur = star.radius * 2.8; ctx.shadowColor = "#ffffff";
+        ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(star.x, star.y, star.radius, 0, Math.PI*2); ctx.fill();
+    }
+
+    planets.forEach(p => {
+        if (p.history.length > 1) {
+            ctx.shadowBlur = 0;
+            for (let i = 0; i < p.history.length - 1; i++) {
+                const ratio = i / p.history.length;
+                ctx.beginPath(); ctx.strokeStyle = p.color; ctx.globalAlpha = ratio * 0.3;
+                ctx.lineWidth = Math.max(0.5, ratio * 3);
+                ctx.moveTo(p.history[i].x, p.history[i].y); ctx.lineTo(p.history[i+1].x, p.history[i+1].y);
+                ctx.stroke();
+            }
+        }
+        const accRatio = p.accTimer / accretionLimit;
+        ctx.shadowBlur = 12 + (accRatio * 20);
+        ctx.shadowColor = accRatio > 0.8 ? "#ffffff" : p.color;
+        ctx.globalAlpha = 1; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2); ctx.fill();
+    });
+
+    if (isDragging) {
+        ctx.shadowBlur = 0;
+        const r = Math.max(2, Math.hypot(mCurrent.x - mStart.x, mCurrent.y - mStart.y)/6);
+        ctx.globalAlpha = 0.5; ctx.strokeStyle = "#00ffcc"; ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.arc(mStart.x, mStart.y, r, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+    }
+    physics(); requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>
