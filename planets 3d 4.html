@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Solaris - 3D Seeding Build</title>
+    <title>Solaris - 3D Seeding & Help</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Inter', sans-serif; color: white; }
         canvas { display: block; touch-action: none; width: 100vw; height: 100vh; }
@@ -26,10 +26,16 @@
             border: 1px solid #333; border-radius: 6px; cursor: pointer; margin-top: 5px;
         }
         button:hover { background: #00ffcc; color: #000; }
-        #popCount { position: absolute; bottom: 20px; left: 20px; font-size: 10px; color: #555; transition: color 0.1s; }
+        #popCount { position: absolute; top: 20px; left: 20px; font-size: 10px; color: #555; transition: color 0.1s; }
         #flashOverlay { 
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
             background: white; opacity: 0; pointer-events: none; z-index: 1000;
+        }
+        .help-text {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            font-size: 10px; text-transform: uppercase; letter-spacing: 2px;
+            color: rgba(0, 255, 204, 0.6); text-align: center; pointer-events: none;
+            text-shadow: 0 0 10px rgba(0, 255, 204, 0.3);
         }
     </style>
 </head>
@@ -55,7 +61,9 @@
     <button onclick="triggerSupernova()">Manual Supernova</button>
     <button onclick="resetSim()">Deep Reset System</button>
 </div>
+
 <div id="popCount">Planets: 0 / 100</div>
+<div class="help-text">Click and drag to add planets. Use right click and drag to visualize in 3D.</div>
 
 <canvas id="canvas"></canvas>
 
@@ -67,6 +75,7 @@ const popCountDisp = document.getElementById('popCount');
 let planets = [], bgStars = [];
 let mainStar = { x: 0, y: 0, z: 0, mass: 5000, radius: 20, isBlackHole: false, type: 'mainStar' };
 
+// PHYSICAL CONSTANTS
 const TRAIL_WIDTH = 4, ACCRETION_LIMIT = 300, MAX_PLANETS = 100;
 const MAX_SHATTER_RADIUS = 20, BH_THRESHOLD = 150000, BOUNDARY = 25000, MAX_SPEED = 60;
 
@@ -94,33 +103,23 @@ function project(x, y, z, fov = 800) {
     return { x: x1 * scale + window.innerWidth/2, y: y2 * scale + window.innerHeight/2, scale, z: z2 };
 }
 
-// INVERSE PROJECTION: Converts screen clicks to 3D world coordinates
 function unproject(screenX, screenY) {
     const rect = canvas.getBoundingClientRect();
     const nx = (screenX - rect.width/2);
     const ny = (screenY - rect.height/2);
-    
-    // We assume the spawn plane is at Z-camera distance zero in rotated space
     let ux = nx, uy = ny, uz = 0;
-    
-    // Reverse Rotate X
     let y1 = uy * Math.cos(-angleX) - uz * Math.sin(-angleX);
     let z1 = uz * Math.cos(-angleX) + uy * Math.sin(-angleX);
-    
-    // Reverse Rotate Y
     let xFinal = ux * Math.cos(-angleY) + z1 * Math.sin(-angleY);
-    let zFinal = z1 * Math.cos(-angleY) - ux * Math.sin(-angleY);
-    let yFinal = y1;
-
-    return { x: xFinal, y: yFinal, z: zFinal };
+    let zFinal = z1 * Math.cos(angleY) - ux * Math.sin(-angleY);
+    return { x: xFinal, y: y1, z: zFinal };
 }
 
 function triggerSupernova() {
     flash.style.transition = "none"; flash.style.opacity = "1";
     setTimeout(() => { flash.style.transition = "opacity 0.6s"; flash.style.opacity = "0"; }, 50);
     planets = []; 
-    mainStar.mass = BH_THRESHOLD;
-    mainStar.isBlackHole = true;
+    mainStar.mass = BH_THRESHOLD; mainStar.isBlackHole = true;
     updateStarProperties();
 }
 
@@ -170,20 +169,10 @@ window.addEventListener('mouseup', (e) => {
     if (isDragging && e.button === 0 && planets.length < MAX_PLANETS) {
         const worldPos = unproject(mStart.x, mStart.y);
         const d = Math.hypot(mCurrent.x - mStart.x, mCurrent.y - mStart.y), r = Math.max(3, d / 6); 
-        
-        // Orbital velocity calculation in 3D
         const dist = Math.sqrt(worldPos.x**2 + worldPos.y**2 + worldPos.z**2);
         const spd = Math.sqrt((G * mainStar.mass) / Math.max(50, dist));
-        
-        // Cross product for tangent vector
-        const vx = -worldPos.y / Math.max(1, dist) * spd;
-        const vy = worldPos.x / Math.max(1, dist) * spd;
-        const vz = 0; // Seeding starts with XY orbital preference
-
-        planets.push(createPlanet(worldPos.x, worldPos.y, worldPos.z, r, vx, vy, vz, `hsl(${Math.random()*360},90%,75%)` ));
-        
-        popCountDisp.style.color = "#00ffcc";
-        setTimeout(() => popCountDisp.style.color = "#555", 100);
+        planets.push(createPlanet(worldPos.x, worldPos.y, worldPos.z, r, -worldPos.y / Math.max(1, dist) * spd, worldPos.x / Math.max(1, dist) * spd, 0, `hsl(${Math.random()*360},90%,75%)` ));
+        popCountDisp.style.color = "#00ffcc"; setTimeout(() => popCountDisp.style.color = "#555", 100);
     }
     isDragging = false; isRotating = false;
 });
@@ -237,6 +226,7 @@ function physics() {
         if (p.cooldown > 0) p.cooldown--; 
         if (maxHistory > 0) { p.history.push({x: p.x, y: p.y, z: p.z}); if (p.history.length > maxHistory) p.history.shift(); }
     });
+    popCountDisp.innerText = `Planets: ${planets.length} / ${MAX_PLANETS}`;
 }
 
 function drawGlow(x, y, radius, color) {
@@ -265,13 +255,12 @@ function draw() {
     renderList.sort((a, b) => b.sortZ - a.sortZ);
 
     renderList.forEach(obj => {
-        const pr = (obj.type === 'trailSegment') ? null : project(obj.x, obj.y, obj.z);
         if (obj.type === 'bgStar') {
-            if (pr.scale <= 0) return;
+            const pr = project(obj.x, obj.y, obj.z); if (pr.scale <= 0) return;
             ctx.globalAlpha = obj.brightness * Math.min(1, pr.scale * 1.5);
             ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(pr.x, pr.y, obj.size * pr.scale, 0, Math.PI * 2); ctx.fill();
         } else if (obj.type === 'mainStar') {
-            if (pr.scale <= 0) return;
+            const pr = project(obj.x, obj.y, obj.z); if (pr.scale <= 0) return;
             drawGlow(pr.x, pr.y, obj.radius * pr.scale, "#ffffff");
             ctx.globalAlpha = 1.0; ctx.fillStyle = obj.isBlackHole ? "#000000" : "#ffffff";
             ctx.beginPath(); ctx.arc(pr.x, pr.y, obj.radius * pr.scale, 0, Math.PI*2); ctx.fill();
@@ -284,7 +273,7 @@ function draw() {
             ctx.moveTo(obj.pt1.x, obj.pt1.y); ctx.lineTo(obj.pt2.x, obj.pt2.y); ctx.stroke();
             ctx.globalCompositeOperation = 'source-over';
         } else if (obj.type === 'planet') {
-            if (pr.scale <= 0) return;
+            const pr = project(obj.x, obj.y, obj.z); if (pr.scale <= 0) return;
             drawGlow(pr.x, pr.y, obj.radius * pr.scale, obj.color);
             ctx.globalAlpha = 1.0; ctx.fillStyle = obj.isBH ? "#000000" : obj.color;
             ctx.beginPath(); ctx.arc(pr.x, pr.y, obj.radius * pr.scale, 0, Math.PI * 2); ctx.fill();
