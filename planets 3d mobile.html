@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Solaris - Mobile Gesture Build</title>
+    <title>Solaris - Hybrid Input Build</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Inter', sans-serif; color: white; position: fixed; width: 100%; height: 100%; touch-action: none; }
-        canvas { display: block; width: 100vw; height: 100vh; }
+        canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
         .ui { 
             position: absolute; top: 10px; right: 10px; 
             background: rgba(10, 10, 15, 0.95); padding: 15px; 
             border-radius: 12px; border: 1px solid #00ffcc44; width: 180px;
             z-index: 100; box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            transition: transform 0.3s ease;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        .ui.minimized { transform: translateX(200px); }
+        .ui.minimized { transform: translateX(210px); }
         .min-btn {
             position: absolute; left: -40px; top: 0; width: 35px; height: 35px;
             background: rgba(10, 10, 15, 0.95); border: 1px solid #00ffcc44;
@@ -24,19 +24,19 @@
         input { width: 100%; margin: 8px 0; accent-color: #00ffcc; }
         label { font-size: 9px; text-transform: uppercase; color: #00ffcc; letter-spacing: 1.5px; display: block; }
         button.reset { width: 100%; padding: 8px; background: #111; color: #fff; border: 1px solid #333; border-radius: 6px; font-size: 9px; margin-top: 5px; cursor: pointer; }
-        #pop { position: absolute; top: 20px; left: 20px; color: #00ffcc; font-size: 11px; pointer-events: none; text-shadow: 0 0 5px #000; }
+        #pop { position: absolute; top: 20px; left: 20px; color: #00ffcc; font-size: 11px; pointer-events: none; text-shadow: 0 0 5px #000; z-index: 50; }
     </style>
 </head>
 <body>
 
-<div id="pop">MOBILE GESTURES ACTIVE // PLANETS: 0</div>
+<div id="pop">SYSTEM STABLE // PLANETS: 0</div>
 <div class="ui" id="toolBox">
     <div class="min-btn" onclick="document.getElementById('toolBox').classList.toggle('minimized')">M</div>
     <label>Zoom: <span id="zDisp">1500</span></label>
     <input type="range" id="zoom" min="200" max="2500" value="1500">
     <label>Speed: <span id="sDisp">1.0</span>x</label>
     <input type="range" id="speed" min="0" max="10" step="0.1" value="1">
-    <label>Star Mass: <span id="mDisp">5000</span></label>
+    <label>Star Mass: <span id="mDispVal">5000</span></label>
     <input type="range" id="mass" min="500" max="150000" step="500" value="5000">
     <label>Trail: <span id="trDisp">30</span></label>
     <input type="range" id="trailLen" min="5" max="200" step="5" value="30">
@@ -46,6 +46,7 @@
 <canvas id="canvas"></canvas>
 
 <script>
+window.oncontextmenu = (e) => { e.preventDefault(); return false; };
 const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
 let planets = [], stars = [], singularityWaves = [];
 let mainStar = { x: 0, y: 0, z: 0, mass: 5000, radius: 20, isBH: false };
@@ -56,7 +57,7 @@ const MAX_PLANET_RADIUS = 60, MAX_PLANET_MASS = 8000;
 const SHATTER_LIMIT = 100, SHATTER_THRESHOLD_MASS = 3500, COALESCE_DIST_MULT = 1.25, COALESCE_TIME_REQ = 120; 
 
 let viewDist = 1500, timeScale = 1, angleX = 0, angleY = 0, maxTrail = 30;
-let isDown = false, mStart = {x:0, y:0}, spawnR = 5, lastTouchPos = {x:0, y:0};
+let isDown = false, isRotating = false, mStart = {x:0, y:0}, mCurrent = {x:0, y:0}, spawnR = 5;
 
 function initStars() {
     stars = [];
@@ -86,55 +87,69 @@ function screenToWorld(sx, sy) {
     return { x: xW, y: y1, z: zW };
 }
 
-// TOUCH GESTURE LOGIC
+// UNIFIED INPUT HANDLER
+canvas.addEventListener('mousedown', e => {
+    isDown = true;
+    mStart = {x: e.clientX, y: e.clientY};
+    mCurrent = {x: e.clientX, y: e.clientY};
+    isRotating = (e.button === 2 || e.shiftKey);
+});
+
+window.addEventListener('mousemove', e => {
+    if(!isDown) return;
+    if(isRotating) {
+        angleY += (e.clientX - mCurrent.x) * 0.005;
+        angleX += (e.clientY - mCurrent.y) * 0.005;
+    } else {
+        spawnR = Math.min(MAX_PLANET_RADIUS, Math.max(3, Math.hypot(e.clientX - mStart.x, e.clientY - mStart.y) / 5));
+    }
+    mCurrent = {x: e.clientX, y: e.clientY};
+});
+
+window.addEventListener('mouseup', e => {
+    if(isDown && !isRotating) {
+        let w = screenToWorld(mStart.x, mStart.y);
+        let d = Math.max(10, Math.sqrt(w.x*w.x + w.y*w.y + w.z*w.z)), vel = Math.sqrt((G_SOLAR * mainStar.mass) / d);
+        planets.push({ x: w.x, y: w.y, z: w.z, r: spawnR, m: Math.PI * spawnR**2, vx: -w.y/d * vel, vy: w.x/d * vel, vz: 0, c: `hsl(${Math.random()*360}, 80%, 70%)`, h: [], dead: false, cooldown: 0, proximityTimer: 0 });
+    }
+    isDown = false; isRotating = false; spawnR = 5;
+});
+
+// TOUCH SUPPORT (Parallel to Mouse)
 canvas.addEventListener('touchstart', e => {
     e.preventDefault();
     if(e.touches.length === 1) {
-        isDown = true;
+        isDown = true; isRotating = false;
         mStart = {x: e.touches[0].clientX, y: e.touches[0].clientY};
-        lastTouchPos = mStart;
+        mCurrent = mStart;
     } else if (e.touches.length === 2) {
-        isDown = false; // Cancel spawn on rotation
-        lastTouchPos = {x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2};
+        isDown = true; isRotating = true;
+        mCurrent = {x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2};
     }
 }, {passive: false});
 
 canvas.addEventListener('touchmove', e => {
     e.preventDefault();
-    if(e.touches.length === 1 && isDown) {
-        // Drag to grow object
+    if(e.touches.length === 1 && isDown && !isRotating) {
         spawnR = Math.min(MAX_PLANET_RADIUS, Math.max(3, Math.hypot(e.touches[0].clientX - mStart.x, e.touches[0].clientY - mStart.y) / 5));
-    } else if (e.touches.length === 2) {
-        // Two finger rotation
-        let currentMid = {x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2};
-        angleY += (currentMid.x - lastTouchPos.x) * 0.01;
-        angleX += (currentMid.y - lastTouchPos.y) * 0.01;
-        lastTouchPos = currentMid;
+    } else if (e.touches.length === 2 && isRotating) {
+        let now = {x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2};
+        angleY += (now.x - mCurrent.x) * 0.01;
+        angleX += (now.y - mCurrent.y) * 0.01;
+        mCurrent = now;
     }
 }, {passive: false});
 
 canvas.addEventListener('touchend', e => {
-    if(isDown) {
+    if(isDown && !isRotating) {
         let w = screenToWorld(mStart.x, mStart.y);
         let d = Math.max(10, Math.sqrt(w.x*w.x + w.y*w.y + w.z*w.z)), vel = Math.sqrt((G_SOLAR * mainStar.mass) / d);
         planets.push({ x: w.x, y: w.y, z: w.z, r: spawnR, m: Math.PI * spawnR**2, vx: -w.y/d * vel, vy: w.x/d * vel, vz: 0, c: `hsl(${Math.random()*360}, 80%, 70%)`, h: [], dead: false, cooldown: 0, proximityTimer: 0 });
     }
-    isDown = false; spawnR = 5;
+    isDown = false; isRotating = false; spawnR = 5;
 });
 
-// DESKTOP FALLBACK
-canvas.addEventListener('mousedown', e => { isDown = true; mStart = {x: e.clientX, y: e.clientY}; lastTouchPos = mStart; });
-window.addEventListener('mousemove', e => {
-    if(!isDown) return;
-    if(e.shiftKey) { // Shift+Drag for rotation on desktop
-        angleY += (e.clientX - lastTouchPos.x) * 0.01; angleX += (e.clientY - lastTouchPos.y) * 0.01;
-    } else {
-        spawnR = Math.min(MAX_PLANET_RADIUS, Math.max(3, Math.hypot(e.clientX - mStart.x, e.clientY - mStart.y) / 5));
-    }
-    lastTouchPos = {x: e.clientX, y: e.clientY};
-});
-window.addEventListener('mouseup', () => { if(isDown && !lastTouchPos.shift) { /* Spawn logic same as touch */ } isDown = false; });
-
+// UI UPDATES
 document.getElementById('zoom').oninput = e => { viewDist = 2700 - e.target.value; document.getElementById('zDisp').innerText = e.target.value; };
 document.getElementById('speed').oninput = e => { timeScale = +e.target.value; document.getElementById('sDisp').innerText = timeScale.toFixed(1); };
 document.getElementById('mass').oninput = e => { mainStar.mass = +e.target.value; updateStar(); };
@@ -144,7 +159,7 @@ function updateStar() {
     const wasBH = mainStar.isBH;
     mainStar.isBH = mainStar.mass >= BH_THRESHOLD;
     mainStar.radius = mainStar.isBH ? 15 : 10 + Math.pow(mainStar.mass, 0.35);
-    document.getElementById('mDisp').innerText = Math.floor(mainStar.mass);
+    document.getElementById('mDispVal').innerText = Math.floor(mainStar.mass);
     document.getElementById('mass').value = mainStar.mass;
     if (mainStar.isBH && !wasBH) { singularityWaves.push({ radius: mainStar.radius, maxRadius: BOUNDARY * 1.5, life: 1 }); screenFlashAlpha = 1.0; }
 }
@@ -251,7 +266,7 @@ function draw() {
         }
     });
     if (screenFlashAlpha > 0) { ctx.fillStyle = '#fff'; ctx.globalAlpha = screenFlashAlpha * 0.7; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-    if(isDown) { ctx.strokeStyle = '#00ffcc'; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(mStart.x, mStart.y, spawnR, 0, 7); ctx.stroke(); }
+    if(isDown && !isRotating) { ctx.strokeStyle = '#00ffcc'; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(mStart.x, mStart.y, spawnR, 0, 7); ctx.stroke(); }
     requestAnimationFrame(draw);
 }
 draw();
