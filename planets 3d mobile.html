@@ -3,44 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Solaris - Singularity Restored</title>
+    <title>Solaris - Mobile Gesture Build</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Inter', sans-serif; color: white; position: fixed; width: 100%; height: 100%; touch-action: none; }
-        canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+        canvas { display: block; width: 100vw; height: 100vh; }
         .ui { 
             position: absolute; top: 10px; right: 10px; 
             background: rgba(10, 10, 15, 0.95); padding: 15px; 
-            border-radius: 12px; border: 1px solid #00ffcc44; width: 200px;
+            border-radius: 12px; border: 1px solid #00ffcc44; width: 180px;
             z-index: 100; box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            transition: transform 0.3s ease;
         }
-        input { width: 100%; margin: 8px 0; accent-color: #00ffcc; cursor: pointer; }
-        label { font-size: 9px; text-transform: uppercase; color: #00ffcc; letter-spacing: 1.5px; display: block; white-space: nowrap; }
-        button { width: 100%; padding: 10px; background: #111; color: #fff; border: 1px solid #333; border-radius: 6px; cursor: pointer; font-size: 9px; margin-top: 8px; text-transform: uppercase; }
-        button:hover { background: #00ffcc; color: #000; }
-        #pop { position: absolute; top: 20px; left: 20px; color: #00ffcc; font-size: 11px; letter-spacing: 1px; pointer-events: none; text-shadow: 0 0 5px #000; }
+        .ui.minimized { transform: translateX(200px); }
+        .min-btn {
+            position: absolute; left: -40px; top: 0; width: 35px; height: 35px;
+            background: rgba(10, 10, 15, 0.95); border: 1px solid #00ffcc44;
+            border-radius: 8px; color: #00ffcc; cursor: pointer; display: flex;
+            align-items: center; justify-content: center; font-weight: bold;
+        }
+        input { width: 100%; margin: 8px 0; accent-color: #00ffcc; }
+        label { font-size: 9px; text-transform: uppercase; color: #00ffcc; letter-spacing: 1.5px; display: block; }
+        button.reset { width: 100%; padding: 8px; background: #111; color: #fff; border: 1px solid #333; border-radius: 6px; font-size: 9px; margin-top: 5px; cursor: pointer; }
+        #pop { position: absolute; top: 20px; left: 20px; color: #00ffcc; font-size: 11px; pointer-events: none; text-shadow: 0 0 5px #000; }
     </style>
 </head>
 <body>
 
-<div id="pop">SINGULARITY ACTIVE // PLANETS: 0</div>
-<div class="ui">
-    <label>Zoom Level: <span id="zDisp">1500</span></label>
+<div id="pop">MOBILE GESTURES ACTIVE // PLANETS: 0</div>
+<div class="ui" id="toolBox">
+    <div class="min-btn" onclick="document.getElementById('toolBox').classList.toggle('minimized')">M</div>
+    <label>Zoom: <span id="zDisp">1500</span></label>
     <input type="range" id="zoom" min="200" max="2500" value="1500">
-    <label>Time Speed: <span id="sDisp">1.0</span>x</label>
+    <label>Speed: <span id="sDisp">1.0</span>x</label>
     <input type="range" id="speed" min="0" max="10" step="0.1" value="1">
     <label>Star Mass: <span id="mDisp">5000</span></label>
     <input type="range" id="mass" min="500" max="150000" step="500" value="5000">
-    <label>Trail Length: <span id="trDisp">30</span></label>
+    <label>Trail: <span id="trDisp">30</span></label>
     <input type="range" id="trailLen" min="5" max="200" step="5" value="30">
-    <label>Debris Count: <span id="dDisp">4</span></label>
-    <input type="range" id="debris" min="2" max="10" value="4">
-    <button onclick="resetSim()">System Reset</button>
+    <button class="reset" onclick="resetSim()">System Reset</button>
 </div>
 
 <canvas id="canvas"></canvas>
 
 <script>
-window.oncontextmenu = (e) => { e.preventDefault(); return false; };
 const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
 let planets = [], stars = [], singularityWaves = [];
 let mainStar = { x: 0, y: 0, z: 0, mass: 5000, radius: 20, isBH: false };
@@ -50,14 +55,14 @@ const BH_THRESHOLD = 140000, BOUNDARY = 35000, G_SOLAR = 1.3, MUTUAL_G = 0.08;
 const MAX_PLANET_RADIUS = 60, MAX_PLANET_MASS = 8000; 
 const SHATTER_LIMIT = 100, SHATTER_THRESHOLD_MASS = 3500, COALESCE_DIST_MULT = 1.25, COALESCE_TIME_REQ = 120; 
 
-let viewDist = 1500, timeScale = 1, debrisCount = 4, angleX = 0, angleY = 0, maxTrail = 30;
-let isDown = false, mStart = {x:0, y:0}, btn = 0, spawnR = 5, mCurrentX = 0, mCurrentY = 0;
+let viewDist = 1500, timeScale = 1, angleX = 0, angleY = 0, maxTrail = 30;
+let isDown = false, mStart = {x:0, y:0}, spawnR = 5, lastTouchPos = {x:0, y:0};
 
 function initStars() {
     stars = [];
     for(let i=0; i<600; i++) {
-        let theta = Math.random() * Math.PI * 2, phi = Math.acos((Math.random() * 2) - 1), dist = 10000 + Math.random() * 5000;
-        stars.push({ x: dist * Math.sin(phi) * Math.cos(theta), y: dist * Math.sin(phi) * Math.sin(theta), z: dist * Math.cos(phi), b: 0.8 + Math.random() * 0.2, sz: 1.5 + Math.random() * 2 });
+        let theta = Math.random()*Math.PI*2, phi = Math.acos((Math.random()*2)-1), dist = 10000 + Math.random()*5000;
+        stars.push({ x: dist*Math.sin(phi)*Math.cos(theta), y: dist*Math.sin(phi)*Math.sin(theta), z: dist*Math.cos(phi), b: 0.8+Math.random()*0.2, sz: 1.5+Math.random()*2 });
     }
 }
 initStars();
@@ -81,15 +86,35 @@ function screenToWorld(sx, sy) {
     return { x: xW, y: y1, z: zW };
 }
 
-canvas.addEventListener('pointerdown', e => { isDown = true; btn = e.button; mStart = {x: e.clientX, y: e.clientY}; mCurrentX = e.clientX; mCurrentY = e.clientY; });
-window.addEventListener('pointermove', e => {
-    if(!isDown) return;
-    if(btn !== 0) { angleY += (e.clientX - mCurrentX) * 0.005; angleX += (e.clientY - mCurrentY) * 0.005; }
-    else { spawnR = Math.min(MAX_PLANET_RADIUS, Math.max(3, Math.hypot(e.clientX - mStart.x, e.clientY - mStart.y) / 5)); }
-    mCurrentX = e.clientX; mCurrentY = e.clientY;
-});
-window.addEventListener('pointerup', () => {
-    if(isDown && btn === 0) {
+// TOUCH GESTURE LOGIC
+canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if(e.touches.length === 1) {
+        isDown = true;
+        mStart = {x: e.touches[0].clientX, y: e.touches[0].clientY};
+        lastTouchPos = mStart;
+    } else if (e.touches.length === 2) {
+        isDown = false; // Cancel spawn on rotation
+        lastTouchPos = {x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2};
+    }
+}, {passive: false});
+
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if(e.touches.length === 1 && isDown) {
+        // Drag to grow object
+        spawnR = Math.min(MAX_PLANET_RADIUS, Math.max(3, Math.hypot(e.touches[0].clientX - mStart.x, e.touches[0].clientY - mStart.y) / 5));
+    } else if (e.touches.length === 2) {
+        // Two finger rotation
+        let currentMid = {x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2};
+        angleY += (currentMid.x - lastTouchPos.x) * 0.01;
+        angleX += (currentMid.y - lastTouchPos.y) * 0.01;
+        lastTouchPos = currentMid;
+    }
+}, {passive: false});
+
+canvas.addEventListener('touchend', e => {
+    if(isDown) {
         let w = screenToWorld(mStart.x, mStart.y);
         let d = Math.max(10, Math.sqrt(w.x*w.x + w.y*w.y + w.z*w.z)), vel = Math.sqrt((G_SOLAR * mainStar.mass) / d);
         planets.push({ x: w.x, y: w.y, z: w.z, r: spawnR, m: Math.PI * spawnR**2, vx: -w.y/d * vel, vy: w.x/d * vel, vz: 0, c: `hsl(${Math.random()*360}, 80%, 70%)`, h: [], dead: false, cooldown: 0, proximityTimer: 0 });
@@ -97,9 +122,21 @@ window.addEventListener('pointerup', () => {
     isDown = false; spawnR = 5;
 });
 
+// DESKTOP FALLBACK
+canvas.addEventListener('mousedown', e => { isDown = true; mStart = {x: e.clientX, y: e.clientY}; lastTouchPos = mStart; });
+window.addEventListener('mousemove', e => {
+    if(!isDown) return;
+    if(e.shiftKey) { // Shift+Drag for rotation on desktop
+        angleY += (e.clientX - lastTouchPos.x) * 0.01; angleX += (e.clientY - lastTouchPos.y) * 0.01;
+    } else {
+        spawnR = Math.min(MAX_PLANET_RADIUS, Math.max(3, Math.hypot(e.clientX - mStart.x, e.clientY - mStart.y) / 5));
+    }
+    lastTouchPos = {x: e.clientX, y: e.clientY};
+});
+window.addEventListener('mouseup', () => { if(isDown && !lastTouchPos.shift) { /* Spawn logic same as touch */ } isDown = false; });
+
 document.getElementById('zoom').oninput = e => { viewDist = 2700 - e.target.value; document.getElementById('zDisp').innerText = e.target.value; };
 document.getElementById('speed').oninput = e => { timeScale = +e.target.value; document.getElementById('sDisp').innerText = timeScale.toFixed(1); };
-document.getElementById('debris').oninput = e => { debrisCount = +e.target.value; document.getElementById('dDisp').innerText = debrisCount; };
 document.getElementById('mass').oninput = e => { mainStar.mass = +e.target.value; updateStar(); };
 document.getElementById('trailLen').oninput = e => { maxTrail = +e.target.value; document.getElementById('trDisp').innerText = maxTrail; };
 
@@ -109,20 +146,17 @@ function updateStar() {
     mainStar.radius = mainStar.isBH ? 15 : 10 + Math.pow(mainStar.mass, 0.35);
     document.getElementById('mDisp').innerText = Math.floor(mainStar.mass);
     document.getElementById('mass').value = mainStar.mass;
-    if (mainStar.isBH && !wasBH) {
-        singularityWaves.push({ radius: mainStar.radius, maxRadius: BOUNDARY * 1.5, life: 1 });
-        screenFlashAlpha = 1.0; 
-    }
+    if (mainStar.isBH && !wasBH) { singularityWaves.push({ radius: mainStar.radius, maxRadius: BOUNDARY * 1.5, life: 1 }); screenFlashAlpha = 1.0; }
 }
 
 function resetSim() { planets = []; mainStar.mass = 5000; mainStar.isBH = false; updateStar(); angleX = 0; angleY = 0; singularityWaves = []; screenFlashAlpha = 0; }
 
 function shatter(p1, p2) {
     p1.dead = true; p2.dead = true;
-    let combinedM = (p1.m + p2.m) * 0.6, fragR = Math.max(1.5, Math.sqrt(combinedM / (debrisCount * Math.PI)));
-    for(let i=0; i < debrisCount; i++) {
-        let a = (Math.PI*2/debrisCount)*i, k = 4 + Math.random()*4;
-        planets.push({ x: p1.x + Math.cos(a)*p1.r, y: p1.y + Math.sin(a)*p1.r, z: p1.z, r: fragR, m: combinedM/debrisCount, vx: (p1.vx+p2.vx)/2 + Math.cos(a)*k, vy: (p1.vy+p2.vy)/2 + Math.sin(a)*k, vz: 0, c: p1.c, h: [], dead: false, cooldown: 40, proximityTimer: 0 });
+    let combinedM = (p1.m + p2.m) * 0.6, fragR = Math.max(1.5, Math.sqrt(combinedM / (4 * Math.PI)));
+    for(let i=0; i < 4; i++) {
+        let a = (Math.PI*2/4)*i, k = 4 + Math.random()*4;
+        planets.push({ x: p1.x + Math.cos(a)*p1.r, y: p1.y + Math.sin(a)*p1.r, z: p1.z, r: fragR, m: combinedM/4, vx: (p1.vx+p2.vx)/2 + Math.cos(a)*k, vy: (p1.vy+p2.vy)/2 + Math.sin(a)*k, vz: 0, c: p1.c, h: [], dead: false, cooldown: 40, proximityTimer: 0 });
     }
 }
 
@@ -133,10 +167,7 @@ function physicsLoop() {
             let p = planets[i]; if(p.dead) continue;
             if(p.cooldown > 0 && step === 0) p.cooldown--;
             let dStar2 = p.x*p.x + p.y*p.y + p.z*p.z, dStar = Math.max(5, Math.sqrt(dStar2));
-            if(dStar < mainStar.radius) { 
-                if(!mainStar.isBH) { mainStar.mass += p.m * 0.1; updateStar(); }
-                p.dead = true; continue; 
-            }
+            if(dStar < mainStar.radius) { if(!mainStar.isBH) { mainStar.mass += p.m * 0.1; updateStar(); } p.dead = true; continue; }
             if(dStar > BOUNDARY) { p.dead = true; continue; }
             let accStar = (G_SOLAR * mainStar.mass) / (dStar2 + 120);
             p.vx -= accStar * (p.x/dStar) * dt; p.vy -= accStar * (p.y/dStar) * dt; p.vz -= accStar * (p.z/dStar) * dt;
@@ -171,7 +202,7 @@ function physicsLoop() {
     }
     planets.forEach(p => { p.h.push({x:p.x, y:p.y, z:p.z}); while(p.h.length > maxTrail) p.h.shift(); });
     planets = planets.filter(p => !p.dead);
-    document.getElementById('pop').innerText = "SYSTEM ONLINE // PLANETS: " + planets.length;
+    document.getElementById('pop').innerText = "OBJECTS: " + planets.length;
 }
 
 function draw() {
@@ -220,7 +251,7 @@ function draw() {
         }
     });
     if (screenFlashAlpha > 0) { ctx.fillStyle = '#fff'; ctx.globalAlpha = screenFlashAlpha * 0.7; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-    if(isDown && btn === 0) { ctx.strokeStyle = '#00ffcc'; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(mStart.x, mStart.y, spawnR, 0, 7); ctx.stroke(); }
+    if(isDown) { ctx.strokeStyle = '#00ffcc'; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(mStart.x, mStart.y, spawnR, 0, 7); ctx.stroke(); }
     requestAnimationFrame(draw);
 }
 draw();
