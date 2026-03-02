@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Solaris - Zoom & Touch Fix</title>
+    <title>Solaris - Unified Zoom</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Inter', sans-serif; color: white; position: fixed; width: 100%; height: 100%; touch-action: none; }
         canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; touch-action: none; }
@@ -40,16 +40,13 @@
 <div id="uiToggle" class="ui-toggle" onclick="toggleUI()">⚙</div>
 <div class="ui-panel" id="panel">
     <label>Zoom Level: <span id="zDisp">800</span></label>
-    <input type="range" id="zoomSlider" min="200" max="2500" step="50" value="800">
+    <input type="range" id="zoomSlider" min="200" max="4000" step="50" value="800">
 
     <label>Time Speed: <span id="tDisp">1.0</span>x</label>
     <input type="range" id="tSlider" min="0" max="4" step="0.1" value="1">
     
     <label>Star Mass: <span id="mDisp">5000</span></label>
     <input type="range" id="massSlider" min="500" max="150000" step="500" value="5000">
-    
-    <label>Trails: <span id="pDisp">50</span></label>
-    <input type="range" id="persistSlider" min="0" max="200" step="5" value="50">
     
     <button onclick="triggerSupernova()">Supernova</button>
     <button onclick="resetSim()">System Reset</button>
@@ -68,15 +65,14 @@ let mainStar = { x: 0, y: 0, z: 0, mass: 5000, radius: 20, isBlackHole: false, c
 
 const MAX_PLANETS = 100, BH_THRESHOLD = 150000, BOUNDARY = 25000, G = 1.2;
 const PLANET_RADIUS_CAP = 35; 
-const MAX_PLANET_MASS = 3000;
 
-let timeScale = 1.0, debrisCount = 4, maxHistory = 50, angleX = 0, angleY = 0, fov = 800;
-let isDragging = false, mStart = {x:0, y:0}, mCurrent = {x:0, y:0}, touchMode = "size", spawnRadius = 5;
+let timeScale = 1.0, maxHistory = 40, angleX = 0, angleY = 0, fov = 800;
+let isDragging = false, mStart = {x:0, y:0}, mCurrent = {x:0, y:0}, touchMode = "rotate", spawnRadius = 5;
 
 function toggleUI() { panel.classList.toggle('hidden'); }
 function initStars() {
     bgStars = [];
-    for(let i=0; i<300; i++) bgStars.push({ x:(Math.random()-0.5)*20000, y:(Math.random()-0.5)*20000, z:(Math.random()-0.5)*20000, b:0.3+Math.random()*0.4 });
+    for(let i=0; i<300; i++) bgStars.push({ x:(Math.random()-0.5)*40000, y:(Math.random()-0.5)*40000, z:(Math.random()-0.5)*40000, b:0.3+Math.random()*0.4 });
 }
 function resize() { 
     const r = window.devicePixelRatio || 1;
@@ -93,25 +89,22 @@ function project(x, y, z) {
 }
 
 function unproject(screenX, screenY) {
-    let nx = screenX - window.innerWidth/2, ny = screenY - window.innerHeight/2;
+    let nx = (screenX - window.innerWidth/2), ny = (screenY - window.innerHeight/2);
     let y1 = ny * Math.cos(-angleX), z1 = ny * Math.sin(-angleX);
     let xF = nx * Math.cos(-angleY) + z1 * Math.sin(-angleY), zF = z1 * Math.cos(-angleY) - nx * Math.sin(-angleY);
     return { x: xF, y: y1, z: zF };
 }
 
-// UI SLIDERS
 document.getElementById('zoomSlider').oninput = (e) => { fov = parseInt(e.target.value); document.getElementById('zDisp').innerText = fov; };
 document.getElementById('tSlider').oninput = (e) => { timeScale = parseFloat(e.target.value); document.getElementById('tDisp').innerText = timeScale.toFixed(1); };
 document.getElementById('massSlider').oninput = (e) => { mainStar.mass = parseInt(e.target.value); updateStarProperties(); };
-document.getElementById('persistSlider').oninput = (e) => { maxHistory = parseInt(e.target.value); document.getElementById('pDisp').innerText = maxHistory; if(maxHistory===0) planets.forEach(p=>p.history=[]); };
 
-// UNIFIED POINTER CONTROLS
 canvas.addEventListener('pointerdown', (e) => {
     isDragging = true;
     mStart = {x: e.clientX, y: e.clientY};
     mCurrent = {...mStart};
-    // Left-click or Primary Touch = Size; Right-click or Secondary Pointer = Rotate
-    if (e.button === 0 || (e.pointerType === 'touch' && e.isPrimary)) touchMode = "size";
+    // DESKTOP: Right click (2) sizes. MOBILE: Secondary touch sizes.
+    if (e.button === 2 || (e.pointerType === 'touch' && !e.isPrimary)) touchMode = "size";
     else touchMode = "rotate";
 });
 
@@ -131,9 +124,9 @@ window.addEventListener('pointerup', (e) => {
         const pos = unproject(mStart.x, mStart.y);
         const d = Math.sqrt(pos.x**2 + pos.y**2 + pos.z**2);
         const spd = Math.sqrt((G * mainStar.mass) / Math.max(50, d));
-        planets.push({ x: pos.x, y: pos.y, z: pos.z, radius: spawnRadius, mass: Math.min(MAX_PLANET_MASS, Math.PI * spawnRadius**2), vx: -pos.y/Math.max(1,d)*spd, vy: pos.x/Math.max(1,d)*spd, vz: 0, color: `hsl(${Math.random()*360},90%,70%)`, history: [], dead: false });
+        planets.push({ x: pos.x, y: pos.y, z: pos.z, radius: spawnRadius, mass: Math.PI * spawnRadius**2, vx: -pos.y/Math.max(1,d)*spd, vy: pos.x/Math.max(1,dist=d)*spd, vz: 0, color: `hsl(${Math.random()*360},90%,70%)`, history: [], dead: false });
     }
-    isDragging = false; spawnRadius = 5;
+    isDragging = false; touchMode = "rotate"; spawnRadius = 5;
 });
 
 function physics() {
@@ -162,7 +155,7 @@ function physics() {
         }
         planets = planets.filter(p => !p.dead);
     }
-    planets.forEach(p => { p.history.push({x: p.x, y: p.y, z: p.z}); if (p.history.length > maxHistory) p.history.shift(); });
+    planets.forEach(p => { p.history.push({x: p.x, y: p.y, z: p.z}); if (p.history.length > 40) p.history.shift(); });
     popCountDisp.innerText = `Planets: ${planets.length} / ${MAX_PLANETS}`;
     updateStarProperties();
 }
@@ -172,13 +165,13 @@ function shatter(p1, p2) {
     const combinedM = (p1.mass + p2.mass) * 0.7, fragR = Math.max(1.2, Math.sqrt(combinedM / (4 * Math.PI)));
     for(let i=0; i < 4; i++) {
         const a = (Math.PI * 2 / 4) * i, kick = 3 + Math.random()*3;
-        planets.push({ x: p1.x+Math.cos(a)*fragR*10, y: p1.y+Math.sin(a)*fragR*10, z: p1.z, radius: fragR, mass: combinedM/4, vx: (p1.vx+p2.vx)/2 + Math.cos(a)*kick, vy: (p1.vy+p2.vy)/2 + Math.sin(a)*kick, vz: 0, color: p1.color, history:[], dead:false });
+        planets.push({ x: p1.x+Math.cos(a)*fragR*12, y: p1.y+Math.sin(a)*fragR*12, z: p1.z, radius: fragR, mass: combinedM/4, vx: (p1.vx+p2.vx)/2 + Math.cos(a)*kick, vy: (p1.vy+p2.vy)/2 + Math.sin(a)*kick, vz: 0, color: p1.color, history:[], dead:false });
     }
 }
 function merge(p1, p2) {
     const totalM = p1.mass + p2.mass;
     p1.vx = (p1.vx * p1.mass + p2.vx * p2.mass) / totalM; p1.vy = (p1.vy * p1.mass + p2.vy * p2.mass) / totalM;
-    p1.mass = Math.min(MAX_PLANET_MASS * 2, totalM); p1.radius = Math.min(PLANET_RADIUS_CAP, Math.sqrt(totalM / Math.PI)); p2.dead = true;
+    p1.mass = Math.min(10000, totalM); p1.radius = Math.min(PLANET_RADIUS_CAP, Math.sqrt(totalM / Math.PI)); p2.dead = true;
 }
 function updateStarProperties() {
     document.getElementById('mDisp').innerText = Math.floor(mainStar.mass);
@@ -192,7 +185,7 @@ function draw() {
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
     const renderList = [ ...bgStars.map(s => ({ ...s, sortZ: project(s.x, s.y, s.z).z, type:'bg' })), { ...mainStar, sortZ: project(mainStar.x, mainStar.y, mainStar.z).z, type:'star' } ];
     planets.forEach(p => {
-        if (p.history.length > 1 && maxHistory > 0) {
+        if (p.history.length > 1) {
             for (let i = 0; i < p.history.length - 1; i++) {
                 const p1 = project(p.history[i].x, p.history[i].y, p.history[i].z), p2 = project(p.history[i+1].x, p.history[i+1].y, p.history[i+1].z);
                 renderList.push({ type: 'trail', color: p.color, alpha: i/p.history.length, pt1: p1, pt2: p2, sortZ: ((p1.z + p2.z)/2) + 10 });
@@ -201,11 +194,11 @@ function draw() {
         renderList.push({ ...p, type:'planet', sortZ: project(p.x, p.y, p.z).z });
     });
     renderList.sort((a, b) => b.sortZ - a.sortZ).forEach(obj => {
-        const pr = (obj.type === 'trail') ? null : project(obj.x, obj.y, obj.z);
+        const pr = project(obj.x, obj.y, obj.z);
         if (obj.type === 'bg') {
-            const prS = project(obj.x, obj.y, obj.z); ctx.globalAlpha = obj.b; ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(prS.x, prS.y, 1, 0, 6.28); ctx.fill();
+            ctx.globalAlpha = obj.b; ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(pr.x, pr.y, 1 * pr.scale, 0, 6.28); ctx.fill();
         } else if (obj.type === 'trail') {
-            ctx.globalCompositeOperation = 'screen'; ctx.strokeStyle = obj.color; ctx.globalAlpha = obj.alpha * 0.4; ctx.lineWidth = 2;
+            ctx.globalCompositeOperation = 'screen'; ctx.strokeStyle = obj.color; ctx.globalAlpha = obj.alpha * 0.4; ctx.lineWidth = 2 * obj.pt1.scale;
             ctx.beginPath(); ctx.moveTo(obj.pt1.x, obj.pt1.y); ctx.lineTo(obj.pt2.x, obj.pt2.y); ctx.stroke(); ctx.globalCompositeOperation = 'source-over';
         } else {
             if (pr.scale <= 0) return;
@@ -218,8 +211,7 @@ function draw() {
         }
     });
     if (isDragging && touchMode === "size") {
-        ctx.strokeStyle = spawnRadius >= PLANET_RADIUS_CAP ? "#ff3366" : "#00ffcc";
-        ctx.setLineDash([5, 5]); ctx.beginPath(); ctx.arc(mStart.x, mStart.y, spawnRadius, 0, 6.28); ctx.stroke(); ctx.setLineDash([]);
+        ctx.strokeStyle = "#00ffcc"; ctx.setLineDash([5, 5]); ctx.beginPath(); ctx.arc(mStart.x, mStart.y, spawnRadius, 0, 6.28); ctx.stroke(); ctx.setLineDash([]);
     }
     physics(); requestAnimationFrame(draw);
 }
