@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Solaris - Mass Cap Build</title>
+    <title>Solaris - Zoom & Touch Fix</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Inter', sans-serif; color: white; position: fixed; width: 100%; height: 100%; }
-        canvas { display: block; touch-action: none; width: 100vw; height: 100vh; cursor: crosshair; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Inter', sans-serif; color: white; position: fixed; width: 100%; height: 100%; touch-action: none; }
+        canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; touch-action: none; }
         
         .ui-panel { 
             position: absolute; top: 10px; right: 10px; 
@@ -24,40 +24,38 @@
             display: flex; align-items: center; justify-content: center;
         }
 
-        input[type=range] { width: 100%; margin: 12px 0; cursor: pointer; accent-color: #00ffcc; }
+        input[type=range] { width: 100%; margin: 12px 0; cursor: pointer; accent-color: #00ffcc; -webkit-appearance: none; background: #333; height: 4px; border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: #00ffcc; cursor: pointer; }
         label { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: #00ffcc; display: block; }
         
         button { 
             width: 100%; padding: 12px; background: #111; color: #fff; 
             border: 1px solid #333; border-radius: 8px; cursor: pointer; margin-top: 8px; font-size: 9px; text-transform: uppercase;
         }
-        button:hover { background: #00ffcc; color: #000; }
         #popCount { position: absolute; top: 20px; left: 20px; font-size: 12px; color: #555; }
-        .help-text {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
-            color: rgba(0, 255, 204, 0.5); text-align: center; pointer-events: none; width: 100%;
-        }
     </style>
 </head>
 <body>
 
 <div id="uiToggle" class="ui-toggle" onclick="toggleUI()">⚙</div>
 <div class="ui-panel" id="panel">
+    <label>Zoom Level: <span id="zDisp">800</span></label>
+    <input type="range" id="zoomSlider" min="200" max="2500" step="50" value="800">
+
     <label>Time Speed: <span id="tDisp">1.0</span>x</label>
     <input type="range" id="tSlider" min="0" max="4" step="0.1" value="1">
+    
     <label>Star Mass: <span id="mDisp">5000</span></label>
     <input type="range" id="massSlider" min="500" max="150000" step="500" value="5000">
-    <label>Debris: <span id="dDisp">4</span></label>
-    <input type="range" id="debrisSlider" min="2" max="10" step="1" value="4">
+    
     <label>Trails: <span id="pDisp">50</span></label>
     <input type="range" id="persistSlider" min="0" max="200" step="5" value="50">
+    
     <button onclick="triggerSupernova()">Supernova</button>
-    <button onclick="resetSim()">Deep Reset</button>
+    <button onclick="resetSim()">System Reset</button>
 </div>
 
 <div id="popCount">Planets: 0 / 100</div>
-<div class="help-text">Left Click: Size & Spawn | Right Click: Rotate Camera</div>
 <canvas id="canvas"></canvas>
 
 <script>
@@ -69,16 +67,16 @@ let planets = [], bgStars = [];
 let mainStar = { x: 0, y: 0, z: 0, mass: 5000, radius: 20, isBlackHole: false, color: "#ffffff" };
 
 const MAX_PLANETS = 100, BH_THRESHOLD = 150000, BOUNDARY = 25000, G = 1.2;
-const PLANET_RADIUS_CAP = 45; // Maximum planet visual size
-const MAX_PLANET_MASS = 5000; // Cap on gravitational influence of a single planet
+const PLANET_RADIUS_CAP = 35; 
+const MAX_PLANET_MASS = 3000;
 
-let timeScale = 1.0, debrisCount = 4, maxHistory = 50, angleX = 0, angleY = 0;
+let timeScale = 1.0, debrisCount = 4, maxHistory = 50, angleX = 0, angleY = 0, fov = 800;
 let isDragging = false, mStart = {x:0, y:0}, mCurrent = {x:0, y:0}, touchMode = "size", spawnRadius = 5;
 
 function toggleUI() { panel.classList.toggle('hidden'); }
 function initStars() {
     bgStars = [];
-    for(let i=0; i<300; i++) bgStars.push({ x:(Math.random()-0.5)*15000, y:(Math.random()-0.5)*15000, z:(Math.random()-0.5)*15000, b:0.3+Math.random()*0.4 });
+    for(let i=0; i<300; i++) bgStars.push({ x:(Math.random()-0.5)*20000, y:(Math.random()-0.5)*20000, z:(Math.random()-0.5)*20000, b:0.3+Math.random()*0.4 });
 }
 function resize() { 
     const r = window.devicePixelRatio || 1;
@@ -87,7 +85,7 @@ function resize() {
 }
 window.addEventListener('resize', resize); resize();
 
-function project(x, y, z, fov = 800) {
+function project(x, y, z) {
     let x1 = x * Math.cos(angleY) + z * Math.sin(angleY), z1 = z * Math.cos(angleY) - x * Math.sin(angleY);
     let y2 = y * Math.cos(angleX) - z1 * Math.sin(angleX), z2 = z1 * Math.cos(angleX) + y * Math.sin(angleX);
     const scale = fov / (fov + z2);
@@ -101,88 +99,86 @@ function unproject(screenX, screenY) {
     return { x: xF, y: y1, z: zF };
 }
 
+// UI SLIDERS
+document.getElementById('zoomSlider').oninput = (e) => { fov = parseInt(e.target.value); document.getElementById('zDisp').innerText = fov; };
 document.getElementById('tSlider').oninput = (e) => { timeScale = parseFloat(e.target.value); document.getElementById('tDisp').innerText = timeScale.toFixed(1); };
 document.getElementById('massSlider').oninput = (e) => { mainStar.mass = parseInt(e.target.value); updateStarProperties(); };
-document.getElementById('debrisSlider').oninput = (e) => { debrisCount = parseInt(e.target.value); document.getElementById('dDisp').innerText = debrisCount; };
 document.getElementById('persistSlider').oninput = (e) => { maxHistory = parseInt(e.target.value); document.getElementById('pDisp').innerText = maxHistory; if(maxHistory===0) planets.forEach(p=>p.history=[]); };
 
+// UNIFIED POINTER CONTROLS
 canvas.addEventListener('pointerdown', (e) => {
-    isDragging = true; mStart = {x: e.clientX, y: e.clientY}; mCurrent = {...mStart};
+    isDragging = true;
+    mStart = {x: e.clientX, y: e.clientY};
+    mCurrent = {...mStart};
+    // Left-click or Primary Touch = Size; Right-click or Secondary Pointer = Rotate
     if (e.button === 0 || (e.pointerType === 'touch' && e.isPrimary)) touchMode = "size";
     else touchMode = "rotate";
 });
+
 window.addEventListener('pointermove', (e) => {
     if (!isDragging) return;
-    if (touchMode === "rotate") { angleY += (e.clientX - mCurrent.x) * 0.005; angleX += (e.clientY - mCurrent.y) * 0.005; }
-    else spawnRadius = Math.min(PLANET_RADIUS_CAP, Math.max(3, Math.hypot(e.clientX - mStart.x, e.clientY - mStart.y) / 4));
+    if (touchMode === "rotate") {
+        angleY += (e.clientX - mCurrent.x) * 0.007;
+        angleX += (e.clientY - mCurrent.y) * 0.007;
+    } else {
+        spawnRadius = Math.min(PLANET_RADIUS_CAP, Math.max(3, Math.hypot(e.clientX - mStart.x, e.clientY - mStart.y) / 4));
+    }
     mCurrent = {x: e.clientX, y: e.clientY};
 });
+
 window.addEventListener('pointerup', (e) => {
     if (isDragging && touchMode === "size" && planets.length < MAX_PLANETS) {
         const pos = unproject(mStart.x, mStart.y);
-        const dist = Math.sqrt(pos.x**2 + pos.y**2 + pos.z**2);
-        const spd = Math.sqrt((G * mainStar.mass) / Math.max(50, dist));
-        // Clamp spawn mass
-        const calcMass = Math.PI * spawnRadius**2;
-        planets.push({ 
-            x: pos.x, y: pos.y, z: pos.z, 
-            radius: spawnRadius, 
-            mass: Math.min(MAX_PLANET_MASS, calcMass), 
-            vx: -pos.y/Math.max(1,dist)*spd, vy: pos.x/Math.max(1,dist)*spd, vz: 0, 
-            color: `hsl(${Math.random()*360},90%,70%)`, history: [], dead: false 
-        });
+        const d = Math.sqrt(pos.x**2 + pos.y**2 + pos.z**2);
+        const spd = Math.sqrt((G * mainStar.mass) / Math.max(50, d));
+        planets.push({ x: pos.x, y: pos.y, z: pos.z, radius: spawnRadius, mass: Math.min(MAX_PLANET_MASS, Math.PI * spawnRadius**2), vx: -pos.y/Math.max(1,d)*spd, vy: pos.x/Math.max(1,d)*spd, vz: 0, color: `hsl(${Math.random()*360},90%,70%)`, history: [], dead: false });
     }
     isDragging = false; spawnRadius = 5;
 });
 
 function physics() {
-    const substeps = 4, dt = (0.1 * timeScale) / substeps;
-    for (let s = 0; s < substeps; s++) {
+    const steps = 4, dt = (0.1 * timeScale) / steps;
+    for (let s = 0; s < steps; s++) {
         for (let i = 0; i < planets.length; i++) {
             let p = planets[i]; if (p.dead) continue;
-            const distStar = Math.sqrt(p.x**2 + p.y**2 + p.z**2);
-            if (distStar < mainStar.radius) { p.dead = true; if (!mainStar.isBlackHole) mainStar.mass += p.mass * 0.1; continue; }
-            if (distStar > BOUNDARY || isNaN(distStar)) { p.dead = true; continue; }
-            const g = mainStar.isBlackHole ? 3.5 : G;
-            const acc = Math.min((g * mainStar.mass) / (distStar**2 + 20), 50);
-            p.vx -= acc * (p.x / (distStar + 0.1)) * dt;
-            p.vy -= acc * (p.y / (distStar + 0.1)) * dt;
-            p.vz -= acc * (p.z / (distStar + 0.1)) * dt;
+            const dist = Math.sqrt(p.x**2 + p.y**2 + p.z**2);
+            if (dist < mainStar.radius) { p.dead = true; if (!mainStar.isBlackHole) mainStar.mass += p.mass * 0.1; continue; }
+            if (dist > BOUNDARY || isNaN(dist)) { p.dead = true; continue; }
+            const acc = Math.min(( (mainStar.isBlackHole ? 3.5 : G) * mainStar.mass) / (dist**2 + 20), 50);
+            p.vx -= acc * (p.x / (dist + 0.1)) * dt; p.vy -= acc * (p.y / (dist + 0.1)) * dt; p.vz -= acc * (p.z / (dist + 0.1)) * dt;
             for (let j = i + 1; j < planets.length; j++) {
                 let o = planets[j]; if (o.dead) continue;
-                const dx = o.x-p.x, dy = o.y-p.y, dz = o.z-p.z, dist = Math.sqrt(dx*dx+dy*dy+dz*dz);
-                if (dist < (p.radius + o.radius)) {
-                    const relV = Math.sqrt((p.vx-o.vx)**2 + (p.vy-o.vy)**2 + (p.vz-o.vz)**2);
-                    if (p.radius < 20 && o.radius < 20 && relV > 4.5) shatter(p,o);
+                const dx = o.x-p.x, dy = o.y-p.y, dz = o.z-p.z, d = Math.sqrt(dx*dx+dy*dy+dz*dz);
+                if (d < (p.radius + o.radius)) {
+                    if (p.radius < 15 && o.radius < 15 && Math.hypot(p.vx-o.vx, p.vy-o.vy) > 4) shatter(p,o);
                     else merge(p.radius > o.radius ? p : o, p.radius > o.radius ? o : p);
                 } else {
-                    const f = (G * p.mass * o.mass) / (dist*dist + 20);
-                    p.vx += (f * dx / (dist+0.1)) / p.mass * dt; o.vx -= (f * dx / (dist+0.1)) / o.mass * dt;
-                    p.vy += (f * dy / (dist+0.1)) / p.mass * dt; o.vy -= (f * dy / (dist+0.1)) / o.mass * dt;
+                    const f = (G * p.mass * o.mass) / (d*d + 20);
+                    p.vx += (f * dx / (d+0.1)) / p.mass * dt; o.vx -= (f * dx / (d+0.1)) / o.mass * dt;
+                    p.vy += (f * dy / (d+0.1)) / p.mass * dt; o.vy -= (f * dy / (d+0.1)) / o.mass * dt;
                 }
             }
             p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
         }
         planets = planets.filter(p => !p.dead);
     }
-    planets.forEach(p => { if (maxHistory > 0) { p.history.push({x: p.x, y: p.y, z: p.z}); if (p.history.length > maxHistory) p.history.shift(); } });
+    planets.forEach(p => { p.history.push({x: p.x, y: p.y, z: p.z}); if (p.history.length > maxHistory) p.history.shift(); });
     popCountDisp.innerText = `Planets: ${planets.length} / ${MAX_PLANETS}`;
     updateStarProperties();
 }
 
 function shatter(p1, p2) {
     p1.dead = true; p2.dead = true;
-    const combinedM = (p1.mass + p2.mass) * 0.7, fragR = Math.max(1.2, Math.sqrt(combinedM / (debrisCount * Math.PI)));
-    for(let i=0; i < debrisCount; i++) {
-        const a = (Math.PI * 2 / debrisCount) * i, kick = 3 + Math.random()*3;
-        planets.push({ x: p1.x+Math.cos(a)*fragR*12, y: p1.y+Math.sin(a)*fragR*12, z: p1.z, radius: fragR, mass: (combinedM/debrisCount), vx: (p1.vx+p2.vx)/2 + Math.cos(a)*kick, vy: (p1.vy+p2.vy)/2 + Math.sin(a)*kick, vz:0, color: p1.color, history:[], dead:false });
+    const combinedM = (p1.mass + p2.mass) * 0.7, fragR = Math.max(1.2, Math.sqrt(combinedM / (4 * Math.PI)));
+    for(let i=0; i < 4; i++) {
+        const a = (Math.PI * 2 / 4) * i, kick = 3 + Math.random()*3;
+        planets.push({ x: p1.x+Math.cos(a)*fragR*10, y: p1.y+Math.sin(a)*fragR*10, z: p1.z, radius: fragR, mass: combinedM/4, vx: (p1.vx+p2.vx)/2 + Math.cos(a)*kick, vy: (p1.vy+p2.vy)/2 + Math.sin(a)*kick, vz: 0, color: p1.color, history:[], dead:false });
     }
 }
 function merge(p1, p2) {
     const totalM = p1.mass + p2.mass;
     p1.vx = (p1.vx * p1.mass + p2.vx * p2.mass) / totalM; p1.vy = (p1.vy * p1.mass + p2.vy * p2.mass) / totalM;
-    p1.mass = Math.min(MAX_PLANET_MASS * 2, totalM); // Slightly higher cap for merged objects
-    p1.radius = Math.min(PLANET_RADIUS_CAP, Math.sqrt(totalM / Math.PI)); p2.dead = true;
+    p1.mass = Math.min(MAX_PLANET_MASS * 2, totalM); p1.radius = Math.min(PLANET_RADIUS_CAP, Math.sqrt(totalM / Math.PI)); p2.dead = true;
 }
 function updateStarProperties() {
     document.getElementById('mDisp').innerText = Math.floor(mainStar.mass);
@@ -191,13 +187,6 @@ function updateStarProperties() {
 }
 function triggerSupernova() { isDragging = false; planets = []; mainStar.mass = BH_THRESHOLD; updateStarProperties(); }
 function resetSim() { isDragging = false; planets = []; mainStar.mass = 5000; mainStar.isBlackHole = false; angleX = 0; angleY = 0; updateStarProperties(); }
-
-function drawGlow(x, y, radius, color) {
-    const clampRadius = Math.min(Math.max(0.5, radius), 300);
-    const g = ctx.createRadialGradient(x, y, clampRadius * 0.4, x, y, clampRadius * 2.5);
-    g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.save(); ctx.globalAlpha = 0.3; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, clampRadius * 2.5, 0, 6.28); ctx.fill(); ctx.restore();
-}
 
 function draw() {
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
@@ -220,7 +209,9 @@ function draw() {
             ctx.beginPath(); ctx.moveTo(obj.pt1.x, obj.pt1.y); ctx.lineTo(obj.pt2.x, obj.pt2.y); ctx.stroke(); ctx.globalCompositeOperation = 'source-over';
         } else {
             if (pr.scale <= 0) return;
-            drawGlow(pr.x, pr.y, obj.radius * pr.scale, obj.color || "#fff");
+            const g = ctx.createRadialGradient(pr.x, pr.y, obj.radius * pr.scale * 0.4, pr.x, pr.y, obj.radius * pr.scale * 2.5);
+            g.addColorStop(0, obj.color || "#fff"); g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.globalAlpha = 0.3; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(pr.x, pr.y, obj.radius * pr.scale * 2.5, 0, 6.28); ctx.fill();
             ctx.globalAlpha = 1; ctx.fillStyle = obj.isBlackHole || obj.isBH ? "#000" : (obj.color || "#fff");
             ctx.beginPath(); ctx.arc(pr.x, pr.y, obj.radius * pr.scale, 0, 6.28); ctx.fill();
             if (obj.isBlackHole || obj.isBH) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.stroke(); }
@@ -228,9 +219,7 @@ function draw() {
     });
     if (isDragging && touchMode === "size") {
         ctx.strokeStyle = spawnRadius >= PLANET_RADIUS_CAP ? "#ff3366" : "#00ffcc";
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath(); ctx.arc(mStart.x, mStart.y, spawnRadius, 0, 6.28); ctx.stroke();
-        ctx.setLineDash([]);
+        ctx.setLineDash([5, 5]); ctx.beginPath(); ctx.arc(mStart.x, mStart.y, spawnRadius, 0, 6.28); ctx.stroke(); ctx.setLineDash([]);
     }
     physics(); requestAnimationFrame(draw);
 }
