@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ICBM STRATEGIC INTERFACE - 1986</title>
+    <style>
+        body {
+            background-color: #020402;
+            color: #39FF14;
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        #ui-header {
+            position: absolute;
+            top: 20px;
+            letter-spacing: 10px;
+            font-size: 24px;
+            text-shadow: 0 0 10px #39FF14;
+        }
+
+        canvas {
+            border: 1px solid #39FF14;
+            box-shadow: 0 0 30px rgba(57, 255, 20, 0.2);
+            cursor: crosshair;
+            background: #000;
+        }
+
+        /* Cleaned up HUD - No overlapping lines */
+        #hud {
+            position: absolute;
+            bottom: 20px;
+            width: 90%;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding-top: 10px;
+        }
+
+        .casualty-count {
+            color: #FF3131;
+            font-size: 58px;
+            font-weight: 900;
+            text-shadow: 0 0 20px #FF3131;
+            font-family: 'Arial Black', Gadget, sans-serif;
+            line-height: 1;
+        }
+
+        #instruction {
+            position: absolute;
+            bottom: 100px; /* Positioned clearly above the HUD */
+            font-size: 22px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            text-shadow: 0 0 12px #39FF14;
+            animation: blink 0.8s infinite;
+        }
+
+        @keyframes blink { 50% { opacity: 0.2; } }
+    </style>
+</head>
+<body>
+
+<div id="ui-header">NORAD STRATEGIC COMMAND</div>
+<div id="instruction">SELECT LAUNCH ORIGIN</div>
+
+<canvas id="mapCanvas" width="1150" height="580"></canvas>
+
+<div id="hud">
+    <div style="margin-bottom: 10px;">
+        <div style="font-size: 14px; color: #FFF; opacity: 0.7;">SYSTEM STATUS</div>
+        <div id="status" style="font-size: 20px; color:#39FF14;">AWAITING AUTHORIZATION</div>
+        <div style="font-size: 14px; margin-top: 10px; color: #FFF; opacity: 0.7;">TARGETING VECTOR</div>
+        <div id="coords" style="font-size: 20px; color:#39FF14;">000 / 000</div>
+    </div>
+    <div style="text-align: right">
+        <div style="font-size: 14px; color: #FF3131; letter-spacing: 2px;">ESTIMATED TOTAL CASUALTIES</div>
+        <div class="casualty-count" id="death-toll">000,000,000</div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status');
+    const instText = document.getElementById('instruction');
+    const deathTollDisplay = document.getElementById('death-toll');
+    const coordsDisplay = document.getElementById('coords');
+
+    let state = 'LAUNCH'; 
+    let launchPos = null;
+    let missiles = [];
+    let explosions = [];
+    let totalCasualties = 0;
+    let worldData = null;
+
+    fetch('https://raw.githubusercontent.com/datasets/geo-boundaries-world-110m/master/countries.geojson')
+        .then(res => res.json())
+        .then(data => { worldData = data; animate(); });
+
+    function mapCoords(lon, lat) {
+        const x = (lon + 180) * (canvas.width / 360);
+        const y = (canvas.height / 2) - (lat * (canvas.height / 180));
+        return { x, y: y + 40 };
+    }
+
+    class Missile {
+        constructor(start, end) {
+            this.start = start;
+            this.end = end;
+            this.progress = 0;
+            this.speed = 0.008;
+            this.height = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2)) * 0.45;
+        }
+
+        update() {
+            this.progress += this.speed;
+            if (this.progress >= 1) {
+                explosions.push({x: this.end.x, y: this.end.y, radius: 0, opacity: 1}); 
+                totalCasualties += Math.floor(Math.random() * 4000000) + 1200000;
+                deathTollDisplay.innerText = totalCasualties.toLocaleString().padStart(9, '0');
+                return false;
+            }
+            return true;
+        }
+
+        draw() {
+            ctx.beginPath();
+            ctx.setLineDash([3, 5]);
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+            ctx.moveTo(this.start.x, this.start.y);
+            let cpX = (this.start.x + this.end.x) / 2;
+            let cpY = (this.start.y + this.end.y) / 2 - this.height;
+            ctx.quadraticCurveTo(cpX, cpY, this.end.x, this.end.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            let t = this.progress;
+            let mx = (1 - t) * (1 - t) * this.start.x + 2 * (1 - t) * t * cpX + t * t * this.end.x;
+            let my = (1 - t) * (1 - t) * this.start.y + 2 * (1 - t) * t * cpY + t * t * this.end.y;
+            
+            ctx.fillStyle = "#FFF";
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = "#FFF";
+            ctx.fillRect(mx-2, my-2, 4, 4);
+            ctx.shadowBlur = 0;
+        }
+    }
+
+    function drawWorld() {
+        if (!worldData) return;
+        ctx.strokeStyle = '#39FF14'; 
+        ctx.lineWidth = 1;
+        ctx.shadowBlur = 3; 
+        ctx.shadowColor = '#39FF14';
+
+        worldData.features.forEach(feature => {
+            feature.geometry.coordinates.forEach(polygon => {
+                ctx.beginPath();
+                const coords = feature.geometry.type === "MultiPolygon" ? polygon[0] : polygon;
+                coords.forEach((p, i) => {
+                    const pos = mapCoords(p[0], p[1]);
+                    if (i === 0) ctx.moveTo(pos.x, pos.y);
+                    else ctx.lineTo(pos.x, pos.y);
+                });
+                ctx.stroke();
+            });
+        });
+        ctx.shadowBlur = 0;
+    }
+
+    function animate() {
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // CRT Scanlines
+        ctx.strokeStyle = 'rgba(57, 255, 20, 0.04)';
+        for(let i=0; i<canvas.height; i+=4) {
+            ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke();
+        }
+
+        drawWorld();
+
+        if (launchPos) {
+            ctx.strokeStyle = '#39FF14';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(launchPos.x - 6, launchPos.y - 6, 12, 12);
+        }
+
+        missiles = missiles.filter(m => {
+            m.draw();
+            return m.update();
+        });
+
+        explosions.forEach((exp, index) => {
+            exp.radius += 1.0;
+            exp.opacity -= 0.012;
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = "#FF0000";
+            ctx.strokeStyle = `rgba(255, 180, 180, ${exp.opacity})`; 
+            ctx.lineWidth = 4; 
+            ctx.beginPath();
+            ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI*2);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            if(exp.opacity <= 0) explosions.splice(index, 1);
+        });
+
+        requestAnimationFrame(animate);
+    }
+
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        coordsDisplay.innerText = `${Math.floor(e.clientX - rect.left)} / ${Math.floor(e.clientY - rect.top)}`;
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        if (state === 'LAUNCH') {
+            launchPos = {x, y};
+            state = 'TARGET';
+            statusText.innerText = "VECTOR ASSIGNED";
+            instText.innerText = "SELECT IMPACT TARGET";
+        } else {
+            missiles.push(new Missile(launchPos, {x, y}));
+            state = 'LAUNCH';
+            launchPos = null;
+            statusText.innerText = "MISSILE AWAY";
+            instText.innerText = "SELECT LAUNCH ORIGIN";
+        }
+    });
+</script>
+</body>
+</html>
