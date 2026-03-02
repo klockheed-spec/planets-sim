@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WOPR: TOTAL STRATEGIC INTERFACE</title>
+    <style>
+        body {
+            background-color: #020402;
+            color: #39FF14;
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0; padding: 0; overflow: hidden;
+            display: flex; flex-direction: column; height: 100vh;
+            touch-action: none;
+        }
+
+        #ui-header {
+            padding: 10px; text-align: center; letter-spacing: 5px;
+            font-size: clamp(12px, 4vw, 18px); text-shadow: 0 0 8px #39FF14;
+            border-bottom: 2px solid #1a331a;
+            background: rgba(0,20,0,0.2);
+            position: relative;
+        }
+
+        #defcon {
+            position: absolute; right: 20px; top: 10px;
+            color: #39FF14; font-weight: bold; font-size: 20px;
+            border: 2px solid #39FF14; padding: 5px 15px;
+        }
+
+        #canvas-container {
+            position: relative; flex-grow: 1;
+            display: flex; align-items: center; justify-content: center;
+            background: #000; overflow: hidden;
+        }
+
+        canvas { background: #000; box-shadow: inset 0 0 100px rgba(57, 255, 20, 0.05); cursor: crosshair; }
+
+        #side-log {
+            position: absolute; left: 15px; top: 15px; width: 240px;
+            font-size: 10px; height: 300px; overflow: hidden;
+            pointer-events: none; color: #39FF14;
+            text-shadow: 0 0 5px #39FF14; z-index: 100;
+        }
+
+        #hud {
+            padding: 20px; background: #000;
+            display: flex; justify-content: space-between; align-items: center;
+            border-top: 3px double #39FF14;
+        }
+
+        .casualty-count {
+            color: #FF3131; font-size: clamp(32px, 12vw, 64px);
+            font-weight: 900; text-shadow: 0 0 25px #FF3131;
+            font-family: 'Arial Black', Gadget, sans-serif;
+            letter-spacing: -2px;
+        }
+
+        #auto-btn {
+            background: #900; color: #FFF; border: 3px solid #F00;
+            padding: 15px 30px; font-family: 'Courier New'; font-weight: bold;
+            cursor: pointer; box-shadow: 0 0 20px #900;
+            transition: all 0.1s; font-size: 18px;
+        }
+
+        #auto-btn:active { transform: scale(0.95); background: #F00; }
+
+        #instruction {
+            position: absolute; bottom: 20px; width: 100%; text-align: center;
+            font-size: 14px; text-shadow: 0 0 10px #39FF14;
+            animation: blink 0.8s infinite; pointer-events: none;
+        }
+
+        @keyframes blink { 50% { opacity: 0.2; } }
+
+        @media (max-width: 600px) {
+            #hud { flex-direction: column; gap: 10px; }
+            #auto-btn { width: 100%; }
+            #side-log { display: none; }
+            #defcon { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-header">
+    GLOBAL THERMONUCLEAR WARFARE SIMULATOR
+    <div id="defcon">DEFCON 5</div>
+</div>
+
+<div id="canvas-container">
+    <div id="side-log"></div>
+    <div id="instruction">MANUAL OVERRIDE: SELECT LAUNCH SITE</div>
+    <canvas id="mapCanvas"></canvas>
+</div>
+
+<div id="hud">
+    <button id="auto-btn" onclick="startGlobalEscalation()">INITIATE STRATEGIC EXCHANGE</button>
+    <div style="text-align: right">
+        <div style="font-size: 11px; color: #FF3131; font-weight: bold; letter-spacing: 3px;">GLOBAL CASUALTY READOUT</div>
+        <div class="casualty-count" id="death-toll">000,000,000</div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    const sideLog = document.getElementById('side-log');
+    const deathTollDisplay = document.getElementById('death-toll');
+    const defconDisplay = document.getElementById('defcon');
+    const instText = document.getElementById('instruction');
+
+    let state = 'LAUNCH'; 
+    let launchPos = null;
+    let missiles = [];
+    let explosions = [];
+    let totalCasualties = 0;
+    let worldData = null;
+    const MAP_RATIO = 2;
+
+    const TARGET_ZONES = {
+        USA: { bounds: [-125, -70, 25, 48] },
+        RUSSIA: { bounds: [30, 160, 50, 75] },
+        CHINA: { bounds: [80, 120, 20, 45] },
+        INDIA: { bounds: [70, 90, 10, 30] },
+        PAKISTAN: { bounds: [62, 75, 25, 35] },
+        IRAN: { bounds: [45, 60, 25, 38] },
+        ISRAEL: { bounds: [34, 35.5, 30, 33] },
+        EUROPE: { bounds: [-5, 30, 40, 60] }
+    };
+
+    function logEvent(msg, color="#39FF14") {
+        const div = document.createElement('div');
+        div.style.color = color;
+        div.innerText = `>> ${msg}`;
+        sideLog.prepend(div);
+        if(sideLog.childNodes.length > 20) sideLog.removeChild(sideLog.lastChild);
+    }
+
+    function setDefcon(level) {
+        defconDisplay.innerText = `DEFCON ${level}`;
+        defconDisplay.style.borderColor = level <= 2 ? "#F00" : "#39FF14";
+        defconDisplay.style.color = level <= 2 ? "#F00" : "#39FF14";
+    }
+
+    function resize() {
+        const container = canvas.parentElement;
+        let w = container.clientWidth, h = container.clientHeight;
+        if (w / h > MAP_RATIO) w = h * MAP_RATIO; else h = w / MAP_RATIO;
+        canvas.width = w; canvas.height = h;
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+
+    fetch('https://raw.githubusercontent.com/datasets/geo-boundaries-world-110m/master/countries.geojson')
+        .then(res => res.json()).then(data => { worldData = data; animate(); });
+
+    function mapCoords(lon, lat) {
+        const x = (lon + 180) * (canvas.width / 360);
+        const latRad = lat * Math.PI / 180;
+        const mercN = Math.log(Math.tan((Math.PI / 4) + (latRad / 2)));
+        const y = (canvas.height / 2) - (canvas.width * mercN / (2 * Math.PI));
+        return { x, y: y + (canvas.height * 0.18) };
+    }
+
+    class Missile {
+        constructor(start, end) {
+            this.start = start; this.end = end;
+            this.progress = 0; 
+            this.speed = 0.002 + Math.random() * 0.004;
+            this.height = Math.abs(end.x - start.x) * 0.3 + 40;
+        }
+        update() {
+            this.progress += this.speed;
+            if (this.progress >= 1) {
+                explosions.push({x: this.end.x, y: this.end.y, radius: 0, opacity: 1}); 
+                totalCasualties += Math.floor(Math.random() * 8000000) + 1500000;
+                deathTollDisplay.innerText = totalCasualties.toLocaleString().padStart(9, '0');
+                return false;
+            }
+            return true;
+        }
+        draw() {
+            ctx.beginPath(); ctx.setLineDash([2, 3]); ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+            ctx.moveTo(this.start.x, this.start.y);
+            let cpX = (this.start.x + this.end.x) / 2;
+            let cpY = Math.min(this.start.y, this.end.y) - this.height;
+            ctx.quadraticCurveTo(cpX, cpY, this.end.x, this.end.y);
+            ctx.stroke(); ctx.setLineDash([]);
+            let t = this.progress;
+            let mx = (1-t)**2 * this.start.x + 2*(1-t)*t * cpX + t**2 * this.end.x;
+            let my = (1-t)**2 * this.start.y + 2*(1-t)*t * cpY + t**2 * this.end.y;
+            ctx.fillStyle = "#FFF"; ctx.fillRect(mx-1, my-1, 2, 2);
+        }
+    }
+
+    function scatterLaunch(fromRegion, toRegion, count) {
+        for(let i=0; i<count; i++) {
+            setTimeout(() => {
+                const fb = TARGET_ZONES[fromRegion].bounds;
+                const tb = TARGET_ZONES[toRegion].bounds;
+                const sLon = fb[0] + Math.random() * (fb[1] - fb[0]);
+                const sLat = fb[2] + Math.random() * (fb[3] - fb[2]);
+                const eLon = tb[0] + Math.random() * (tb[1] - tb[0]);
+                const eLat = tb[2] + Math.random() * (tb[3] - tb[2]);
+                missiles.push(new Missile(mapCoords(sLon, sLat), mapCoords(eLon, eLat)));
+            }, i * 250);
+        }
+    }
+
+    function startGlobalEscalation() {
+        setDefcon(4);
+        logEvent("REGIONAL CONFLICT: MIDDLE EAST SECTOR", "#F00");
+        scatterLaunch("ISRAEL", "IRAN", 10); scatterLaunch("IRAN", "ISRAEL", 15);
+        setTimeout(() => { setDefcon(3); logEvent("SUBSURFACE LAUNCH: INDIAN OCEAN", "#F00"); scatterLaunch("INDIA", "PAKISTAN", 20); scatterLaunch("PAKISTAN", "INDIA", 20); }, 6000);
+        setTimeout(() => { setDefcon(2); logEvent("SOVIET FIRST STRIKE INBOUND", "#F00"); scatterLaunch("RUSSIA", "USA", 50); scatterLaunch("RUSSIA", "EUROPE", 30); }, 12000);
+        setTimeout(() => { setDefcon(1); logEvent("CHINA SECOND STRIKE DETECTED", "#F00"); scatterLaunch("CHINA", "USA", 30); }, 18000);
+        setTimeout(() => { logEvent("ALPHA STRIKE AUTHORIZED: DEAD HAND", "#FFF"); scatterLaunch("USA", "RUSSIA", 60); scatterLaunch("USA", "CHINA", 40); scatterLaunch("EUROPE", "RUSSIA", 25); }, 24000);
+        setTimeout(() => { logEvent("RESERVE SILOS ENGAGED", "#F00"); scatterLaunch("RUSSIA", "USA", 30); scatterLaunch("USA", "RUSSIA", 30); }, 35000);
+        setTimeout(() => { logEvent("FINAL WAVE CONFIRMED", "#F00"); scatterLaunch("CHINA", "USA", 15); scatterLaunch("USA", "CHINA", 15); scatterLaunch("RUSSIA", "EUROPE", 15); }, 45000);
+    }
+
+    function handleInput(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        if (state === 'LAUNCH') {
+            launchPos = {x, y};
+            state = 'TARGET';
+            instText.innerText = "MANUAL OVERRIDE: SELECT IMPACT VECTOR";
+        } else {
+            missiles.push(new Missile(launchPos, {x, y}));
+            state = 'LAUNCH';
+            launchPos = null;
+            instText.innerText = "MANUAL OVERRIDE: SELECT LAUNCH SITE";
+        }
+    }
+
+    canvas.addEventListener('mousedown', (e) => handleInput(e.clientX, e.clientY));
+    canvas.addEventListener('touchstart', (e) => { handleInput(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, {passive: false});
+
+    function drawWorld() {
+        if (!worldData) return;
+        ctx.strokeStyle = '#39FF14'; ctx.lineWidth = 0.8;
+        ctx.shadowBlur = 3; ctx.shadowColor = '#39FF14';
+        worldData.features.forEach(feature => {
+            feature.geometry.coordinates.forEach(polygon => {
+                ctx.beginPath();
+                const coords = feature.geometry.type === "MultiPolygon" ? polygon[0] : polygon;
+                coords.forEach((p, i) => {
+                    const pos = mapCoords(p[0], p[1]);
+                    if (i === 0) ctx.moveTo(pos.x, pos.y); else ctx.lineTo(pos.x, pos.y);
+                });
+                ctx.stroke();
+            });
+        });
+        ctx.shadowBlur = 0;
+    }
+
+    function animate() {
+        ctx.fillStyle = "black"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = "rgba(57, 255, 20, 0.04)";
+        for(let i=0; i<canvas.height; i+=4) { ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(canvas.width,i); ctx.stroke(); }
+        drawWorld();
+
+        if (launchPos) {
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(launchPos.x - 8, launchPos.y - 8, 16, 16);
+        }
+
+        missiles = missiles.filter(m => { m.draw(); return m.update(); });
+        explosions.forEach((exp, index) => {
+            exp.radius += 0.6; exp.opacity -= 0.01;
+            ctx.shadowBlur = 20; ctx.shadowColor = "#FF0000";
+            ctx.strokeStyle = `rgba(255, 180, 180, ${exp.opacity})`; ctx.lineWidth = 3; 
+            ctx.beginPath(); ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI*2); ctx.stroke();
+            ctx.shadowBlur = 0;
+            if(exp.opacity <= 0) explosions.splice(index, 1);
+        });
+        requestAnimationFrame(animate);
+    }
+</script>
+</body>
+</html>
