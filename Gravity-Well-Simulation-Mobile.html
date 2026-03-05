@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>K-SPEC // MOBILE_LAUNCH_RESTORED</title>
+    <title>K-SPEC // MOBILE_ORBIT_TRAILS</title>
     <style>
         body { margin: 0; background: #000; color: #0ff; font-family: sans-serif; overflow: hidden; touch-action: none; height: 100dvh; width: 100vw; }
         canvas { display: block; position: fixed; top: 0; left: 0; }
@@ -19,6 +19,8 @@
         button.active { background: #0ff; color: #000; font-weight: bold; }
         label { font-size: 9px; color: #ccc; text-transform: uppercase; letter-spacing: 1px; }
         input[type=range] { width: 100%; accent-color: #0ff; cursor: pointer; height: 20px; }
+        .check-row { display: flex; align-items: center; gap: 8px; font-size: 10px; color: #0ff; cursor: pointer; }
+        input[type=checkbox] { accent-color: #0ff; }
     </style>
 </head>
 <body>
@@ -58,6 +60,9 @@
     <div id="right-content" class="content open">
         <div><label>Sim Speed</label><input type="range" id="speed-slider" min="0" max="2" step="0.1" value="1"></div>
         <div><label>G-Scale</label><input type="range" id="warp-slider" min="1" max="25" step="0.1" value="5"></div>
+        <label class="check-row">
+            <input type="checkbox" id="trail-toggle"> SHOW ORBIT LINES
+        </label>
     </div>
 </div>
 
@@ -159,7 +164,6 @@ canvas.addEventListener('touchend', (e) => {
         const wY = dxS * Math.sin(-cam.rotZ) + dyS * Math.cos(-cam.rotZ);
         let vx = 0, vy = 0;
         if (currentMode === 'directional') { 
-            // INCREASED VELOCITY MULTIPLIER (0.25)
             vx = (startX - curX) * 0.25; vy = (startY - curY) * 0.25; 
         } else if (currentMode === 'orbital') {
             const nearest = objects.find(o => o.isStatic);
@@ -169,7 +173,7 @@ canvas.addEventListener('touchend', (e) => {
                 vx = -(dy/r) * speed; vy = (dx/r) * speed;
             }
         }
-        objects.push({ x: wX, y: wY, vx, vy, mass: dragMass, type: currentType, isStatic: (currentMode === 'static'), size: CONFIG[currentType].minSize + (dragMass / CONFIG[currentType].factor) });
+        objects.push({ x: wX, y: wY, vx, vy, mass: dragMass, type: currentType, isStatic: (currentMode === 'static'), size: CONFIG[currentType].minSize + (dragMass / CONFIG[currentType].factor), trail: [] });
     }
     isPointerDown = false; isMultiTouch = false;
 });
@@ -179,6 +183,8 @@ window.addEventListener('resize', () => { canvas.width = window.innerWidth; canv
 function update() {
     const simSpeed = parseFloat(document.getElementById('speed-slider').value);
     const gScale = parseFloat(document.getElementById('warp-slider').value);
+    const showTrails = document.getElementById('trail-toggle').checked;
+    
     if (isPointerDown) dragMass += 15000;
 
     for(let i = 0; i < objects.length; i++) {
@@ -194,6 +200,14 @@ function update() {
             a.vx += ((f * dx / d) / a.mass) * simSpeed; a.vy += ((f * dy / d) / a.mass) * simSpeed;
         }
         a.x += a.vx * simSpeed; a.y += a.vy * simSpeed;
+        
+        // Add trail point
+        if (showTrails) {
+            a.trail.push({x: a.x, y: a.y});
+            if (a.trail.length > 150) a.trail.shift();
+        } else {
+            a.trail = [];
+        }
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -218,6 +232,22 @@ function update() {
     objects.forEach(obj => {
         const v = getVertex(obj.x, obj.y, gScale);
         const liftValue = obj.size * CONFIG[obj.type].lift;
+        
+        // Render Trail
+        if (showTrails && obj.trail.length > 1) {
+            ctx.beginPath();
+            ctx.strokeStyle = CONFIG[obj.type].color + "88"; 
+            ctx.lineWidth = 2 * cam.zoom;
+            for(let k=0; k<obj.trail.length; k++){
+                const tp = obj.trail[k];
+                const tv = getDepth(tp.x, tp.y, gScale); // Simplified depth for performance
+                const tProj = projectSimple(tp.x, tp.y, tv, cam);
+                if(k === 0) ctx.moveTo(tProj.px, tProj.py);
+                else ctx.lineTo(tProj.px, tProj.py);
+            }
+            ctx.stroke();
+        }
+
         const x1 = obj.x * Math.cos(cam.rotZ) - obj.y * Math.sin(cam.rotZ);
         const y1 = obj.x * Math.sin(cam.rotZ) + obj.y * Math.cos(cam.rotZ);
         const y2 = y1 * Math.cos(cam.rotX) - (v.wz + liftValue) * Math.sin(cam.rotX);
@@ -233,18 +263,34 @@ function update() {
         ctx.save(); ctx.setLineDash([5, 5]);
         ctx.strokeStyle = CONFIG[currentType].color === '#000' ? '#f11' : CONFIG[currentType].color;
         ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(startX, startY, currentSize, 0, Math.PI * 2); ctx.stroke();
-        
-        // RESTORED SLINGSHOT ARROW
         if (currentMode === 'directional') {
             ctx.setLineDash([]); ctx.strokeStyle = '#0ff'; ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(startX, startY);
-            ctx.lineTo(startX + (startX - curX), startY + (startY - curY));
-            ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(startX + (startX - curX), startY + (startY - curY)); ctx.stroke();
         }
         ctx.restore();
     }
     requestAnimationFrame(update);
+}
+
+// Helper for Trail Projection performance
+function getDepth(ox, oy, gScale) {
+    let wz = 0;
+    const depthMod = 1 + (gScale - 1) * 0.2;
+    const reachMod = 1 + (gScale - 1) * 0.45;
+    for (let obj of objects) {
+        let dx = obj.x - ox, dy = obj.y - oy;
+        let distSq = dx*dx + dy*dy;
+        let sigma = ((obj.size * 2.0) + (40 * Math.sqrt(obj.mass / 25000))) * reachMod * CONFIG[obj.type].reach;
+        let influence = Math.exp(-distSq / (2 * sigma * sigma));
+        wz -= (CONFIG.BASE_DEPTH * depthMod * CONFIG[obj.type].warpMult) * influence;
+    }
+    return wz;
+}
+function projectSimple(x, y, z, c) {
+    const x1 = x * Math.cos(c.rotZ) - y * Math.sin(c.rotZ);
+    const y1 = x * Math.sin(c.rotZ) + y * Math.cos(c.rotZ);
+    const y2 = y1 * Math.cos(c.rotX) - z * Math.sin(c.rotX);
+    return { px: (x1 * c.zoom) + canvas.width/2 + c.x, py: (y2 * c.zoom) + canvas.height/2 + c.y };
 }
 
 canvas.width = window.innerWidth;
