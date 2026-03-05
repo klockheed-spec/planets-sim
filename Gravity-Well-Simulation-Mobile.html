@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>K-SPEC // GRAVITY_HIERARCHY_FIX</title>
+    <title>K-SPEC // PLANET_STEEPNESS_REFINED</title>
     <style>
         body { margin: 0; background: #000; color: #0ff; font-family: sans-serif; overflow: hidden; touch-action: none; height: 100dvh; width: 100vw; }
         canvas { display: block; position: fixed; top: 0; left: 0; }
@@ -105,12 +105,15 @@ function getDepth(ox, oy, gScale) {
         let dx = obj.x - ox, dy = obj.y - oy;
         let distSq = dx*dx + dy*dy;
         
-        // HIERARCHY FIX: Hard cap mass influence for planets vs stars
         let massRatio = obj.mass / CONFIG[obj.type].baseMass;
         let effectiveWarp = CONFIG[obj.type].warpMult;
         
+        // REFINED PLANET STEEPNESS
         if (obj.type === 'planet') {
-            effectiveWarp *= Math.min(1.5, Math.sqrt(massRatio)); // Limit planet depth
+            // Cap depth so large planets remain shallower than stars
+            effectiveWarp *= Math.min(2.5, Math.pow(massRatio, 0.6)); 
+        } else if (obj.type === 'star') {
+            effectiveWarp *= (0.9 + Math.sqrt(massRatio) * 0.1); // Stars scale with mass more predictably
         } else {
             effectiveWarp *= Math.sqrt(massRatio);
         }
@@ -132,7 +135,7 @@ function project(x, y, z) {
     return { px: (x1 * cam.zoom) + canvas.width/2 + cam.x, py: (y2 * cam.zoom) + canvas.height/2 + cam.y, zs: zs };
 }
 
-// Input Handlers
+// Input Logic
 window.onmousedown = (e) => {
     if (e.target !== canvas) return;
     startX = e.clientX; startY = e.clientY;
