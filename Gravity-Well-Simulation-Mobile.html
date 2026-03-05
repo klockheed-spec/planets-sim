@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>K-SPEC // NEWTONIAN_GRAVITY_CORE</title>
+    <title>K-SPEC // CALIBRATED_NEWTONIAN_V4</title>
     <style>
         body { margin: 0; background: #000; color: #0ff; font-family: sans-serif; overflow: hidden; touch-action: none; height: 100dvh; width: 100vw; }
         canvas { display: block; position: fixed; top: 0; left: 0; }
@@ -48,7 +48,7 @@
     <button class="toggle-btn" onclick="togglePanel('right-content')">⚙ PHYSICS ☰</button>
     <div id="right-content" class="content open">
         <div><label>Sim Speed</label><input type="range" id="speed-slider" min="0" max="2" step="0.1" value="1"></div>
-        <div><label>G-Scale</label><input type="range" id="warp-slider" min="1" max="50" step="1" value="15"></div>
+        <div><label>G-Scale (Warp)</label><input type="range" id="warp-slider" min="1" max="100" step="1" value="35"></div>
         <label style="display:flex; align-items:center; gap:8px; font-size:10px;">
             <input type="checkbox" id="trail-toggle" checked> SHOW ORBITS
         </label>
@@ -65,16 +65,15 @@ let objects = [];
 let currentType = 'star', currentMode = 'static', dragMass = 0;
 let isPointerDown = false, isRightClick = false, isMultiTouch = false;
 let startX, startY, curX, curY;
-let initialPinchDist = 0, initialZoom = 1, initialPinchAngle = 0, initialRotZ = 0;
+let initialPinchDist = 0, initialZoom = 1;
 let cam = { x: 0, y: 150, zoom: 0.5, rotX: 1.15, rotZ: 0.5 };
 
 const CONFIG = {
-    star: { baseMass: 100000, color: '#ffff00', minSize: 40, warpMult: 1.0 },
-    planet: { baseMass: 2000, color: '#00ff00', minSize: 12, warpMult: 1.0 }, 
-    blackhole: { baseMass: 5000000, color: '#000', minSize: 8, warpMult: 5.0 },
-    G: 2.2, // Universal Gravitational Constant
-    SOFTENING: 25, // Prevents division by zero at center
-    VISUAL_SCALING: 0.005 // Scales Newtonian potential to screen pixels
+    star: { baseMass: 150000, color: '#ffff00', minSize: 45, warpFactor: 1.2, softening: 60 },
+    planet: { baseMass: 5000, color: '#00ff00', minSize: 12, warpFactor: 0.4, softening: 25 }, 
+    blackhole: { baseMass: 8000000, color: '#000', minSize: 8, warpFactor: 12.0, softening: 15 },
+    G: 2.5,
+    VISUAL_SCALING: 0.003
 };
 
 function togglePanel(id) { document.getElementById(id).classList.toggle('open'); }
@@ -87,20 +86,20 @@ function updateUI() {
     document.getElementById(`mode-${currentMode}`).classList.add('active');
 }
 
-// NEWTONIAN POTENTIAL LOGIC
-function getNewtonianDepth(ox, oy, gScale) {
+// HYBRID NEWTONIAN DEPTH
+function getHybridDepth(ox, oy, gScale) {
     let potential = 0;
     let totalTension = 0;
     for (let obj of objects) {
         let dx = obj.x - ox, dy = obj.y - oy;
         let r = Math.sqrt(dx*dx + dy*dy);
         
-        // Newton's Law Falloff: V = -G * M / (r + softening)
-        let influence = (CONFIG.G * obj.mass * obj.warpMult) / (r + CONFIG.SOFTENING);
+        // Newtonian falloff with mass-adaptive softening
+        let influence = (CONFIG.G * obj.mass * obj.warpFactor) / (r + obj.softening);
         potential -= influence;
         
-        // Use a standard Gaussian for grid coloring/tension only
-        totalTension += Math.exp(-(r*r) / (200 * 200));
+        // Visual tension for coloring
+        totalTension += Math.exp(-(r*r) / (300 * 300));
     }
     return { z: potential * gScale * CONFIG.VISUAL_SCALING, tension: Math.min(totalTension, 1) };
 }
@@ -113,7 +112,7 @@ function project(x, y, z) {
     return { px: (x1 * cam.zoom) + canvas.width/2 + cam.x, py: (y2 * cam.zoom) + canvas.height/2 + cam.y, zs: zs };
 }
 
-// Input Handling
+// Unified Input Logic
 window.onmousedown = (e) => {
     if (e.target !== canvas) return;
     startX = e.clientX; startY = e.clientY; curX = e.clientX; curY = e.clientY;
@@ -174,7 +173,16 @@ function handleDeploy(sx, sy, cx, cy) {
             vx = -(dy/r) * speed; vy = (dx/r) * speed;
         }
     }
-    objects.push({ x: wX, y: wY, vx, vy, mass: dragMass, type: currentType, isStatic: (currentMode === 'static'), size: CONFIG[currentType].minSize + (dragMass / 20000), trail: [], warpMult: CONFIG[currentType].warpMult });
+    objects.push({ 
+        x: wX, y: wY, vx, vy, 
+        mass: dragMass, type: currentType, 
+        isStatic: (currentMode === 'static'), 
+        size: CONFIG[currentType].minSize + (dragMass / 40000), 
+        color: CONFIG[currentType].color,
+        warpFactor: CONFIG[currentType].warpFactor,
+        softening: CONFIG[currentType].softening,
+        trail: [] 
+    });
 }
 
 window.oncontextmenu = (e) => e.preventDefault();
@@ -184,17 +192,17 @@ function update() {
     const simSpeed = parseFloat(document.getElementById('speed-slider').value);
     const gScale = parseFloat(document.getElementById('warp-slider').value);
     const showTrails = document.getElementById('trail-toggle').checked;
-    if (isPointerDown) dragMass += 25000;
+    if (isPointerDown) dragMass += 30000;
 
     for(let i = 0; i < objects.length; i++) {
         let a = objects[i]; if (a.isStatic) continue;
         for(let j = 0; j < objects.length; j++) {
             if (i === j) continue;
             let b = objects[j]; let dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx*dx + dy*dy);
-            if (d < (a.size + b.size) * 0.4) {
+            if (d < (a.size + b.size) * 0.5) {
                 if (b.type === 'blackhole' || b.mass > a.mass) { b.mass += a.mass; b.size += a.size * 0.1; objects.splice(i, 1); i--; break; }
             }
-            if (d < 30) continue;
+            if (d < 35) continue;
             let f = (CONFIG.G * a.mass * b.mass) / (d*d);
             a.vx += (f * dx / d) / a.mass * simSpeed; a.vy += (f * dy / d) / a.mass * simSpeed;
         }
@@ -204,11 +212,11 @@ function update() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const res = 110; 
-    const bound = 4500;
+    const bound = 5000;
     for (let i = -bound; i <= bound; i += res) {
         ctx.beginPath();
         for (let j = -bound; j <= bound; j += res) {
-            const d = getNewtonianDepth(i, j, gScale);
+            const d = getHybridDepth(i, j, gScale);
             const p = project(i, j, d.z);
             ctx.strokeStyle = `rgb(${d.tension * 150}, ${80 + d.tension * 175}, ${110 + d.tension * 145})`;
             if (j === -bound) ctx.moveTo(p.px, p.py); else ctx.lineTo(p.px, p.py);
@@ -218,7 +226,7 @@ function update() {
     for (let j = -bound; j <= bound; j += res) {
         ctx.beginPath();
         for (let i = -bound; i <= bound; i += res) {
-            const d = getNewtonianDepth(i, j, gScale);
+            const d = getHybridDepth(i, j, gScale);
             const p = project(i, j, d.z);
             ctx.strokeStyle = `rgb(${d.tension * 150}, ${80 + d.tension * 175}, ${110 + d.tension * 145})`;
             if (i === -bound) ctx.moveTo(p.px, p.py); else ctx.lineTo(p.px, p.py);
@@ -227,12 +235,12 @@ function update() {
     }
 
     objects.forEach(obj => {
-        const d = getNewtonianDepth(obj.x, obj.y, gScale);
+        const d = getHybridDepth(obj.x, obj.y, gScale);
         const p = project(obj.x, obj.y, d.z + (obj.size * 0.8));
         if (showTrails && obj.trail.length > 1) {
             ctx.beginPath(); ctx.strokeStyle = obj.color + "66";
             obj.trail.forEach((tp, k) => {
-                const tv = getNewtonianDepth(tp.x, tp.y, gScale);
+                const tv = getHybridDepth(tp.x, tp.y, gScale);
                 const tProj = project(tp.x, tp.y, tv.z);
                 if(k===0) ctx.moveTo(tProj.px, tProj.py); else ctx.lineTo(tProj.px, tProj.py);
             });
@@ -244,7 +252,7 @@ function update() {
 
     if (isPointerDown && !isMultiTouch) {
         ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = CONFIG[currentType].color;
-        ctx.beginPath(); ctx.arc(startX, startY, (CONFIG[currentType].minSize + (dragMass/20000))*cam.zoom, 0, Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(startX, startY, (CONFIG[currentType].minSize + (dragMass/40000))*cam.zoom, 0, Math.PI*2); ctx.stroke();
         if (currentMode === 'directional') {
             ctx.setLineDash([]); ctx.strokeStyle = '#0ff'; ctx.beginPath();
             ctx.moveTo(startX, startY); ctx.lineTo(startX + (startX - curX), startY + (startY - curY)); ctx.stroke();
