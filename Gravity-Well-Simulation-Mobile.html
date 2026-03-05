@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>K-SPEC // PLANET_STEEPNESS_REFINED</title>
+    <title>K-SPEC // PHYSICS_HIERARCHY_V3</title>
     <style>
         body { margin: 0; background: #000; color: #0ff; font-family: sans-serif; overflow: hidden; touch-action: none; height: 100dvh; width: 100vw; }
         canvas { display: block; position: fixed; top: 0; left: 0; }
@@ -108,17 +108,16 @@ function getDepth(ox, oy, gScale) {
         let massRatio = obj.mass / CONFIG[obj.type].baseMass;
         let effectiveWarp = CONFIG[obj.type].warpMult;
         
-        // REFINED PLANET STEEPNESS
+        // HIERARCHY FIX: Capping planet depth vs scaling star depth
         if (obj.type === 'planet') {
-            // Cap depth so large planets remain shallower than stars
-            effectiveWarp *= Math.min(2.5, Math.pow(massRatio, 0.6)); 
+            effectiveWarp *= Math.min(2.0, Math.pow(massRatio, 0.5)); 
         } else if (obj.type === 'star') {
-            effectiveWarp *= (0.9 + Math.sqrt(massRatio) * 0.1); // Stars scale with mass more predictably
+            effectiveWarp *= (0.7 + Math.sqrt(massRatio) * 0.8);
         } else {
             effectiveWarp *= Math.sqrt(massRatio);
         }
 
-        let sigma = ((obj.size * 2.0) + (40 * Math.sqrt(obj.mass / 25000))) * reachMod * CONFIG[obj.type].reach;
+        let sigma = ((obj.size * 2.2) + (50 * Math.sqrt(obj.mass / 25000))) * reachMod * CONFIG[obj.type].reach;
         let influence = Math.exp(-distSq / (2 * sigma * sigma));
         
         wz -= (CONFIG.BASE_DEPTH * depthMod * effectiveWarp) * influence;
@@ -135,7 +134,7 @@ function project(x, y, z) {
     return { px: (x1 * cam.zoom) + canvas.width/2 + cam.x, py: (y2 * cam.zoom) + canvas.height/2 + cam.y, zs: zs };
 }
 
-// Input Logic
+// Unified Desktop & Mobile Input logic
 window.onmousedown = (e) => {
     if (e.target !== canvas) return;
     startX = e.clientX; startY = e.clientY;
