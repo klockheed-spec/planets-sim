@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>K-SPEC // DEPTH_HIERARCHY_REFINED</title>
+    <title>K-SPEC // PLANET_MASS_DEPTH_FIX</title>
     <style>
         body { margin: 0; background: #000; color: #0ff; font-family: sans-serif; overflow: hidden; touch-action: none; height: 100dvh; width: 100vw; }
         canvas { display: block; position: fixed; top: 0; left: 0; }
@@ -79,8 +79,8 @@ let initialPinchDist = 0, initialZoom = 1, initialPinchAngle = 0, initialRotZ = 
 let cam = { x: 0, y: 150, zoom: 0.5, rotX: 1.15, rotZ: 0.5 };
 
 const CONFIG = {
-    star: { baseMass: 85000, color: '#ffff00', minSize: 45, lift: 1.0, warpMult: 1.1, reach: 1.2, factor: 15000 },
-    planet: { baseMass: 2000, color: '#00ff00', minSize: 10, lift: 0.6, warpMult: 0.1, reach: 0.8, factor: 15000 }, 
+    star: { baseMass: 85000, color: '#ffff00', minSize: 45, lift: 1.0, warpMult: 1.2, reach: 1.2, factor: 15000 },
+    planet: { baseMass: 2000, color: '#00ff00', minSize: 10, lift: 0.6, warpMult: 0.12, reach: 0.75, factor: 15000 }, 
     blackhole: { baseMass: 3000000, color: '#000', minSize: 7.5, lift: 0.0, warpMult: 12.0, reach: 0.3, factor: 30000 },
     PHYSICS_G: 2.2, gridSize: 6000, BASE_DEPTH: 380 
 };
@@ -107,13 +107,12 @@ function getDepth(ox, oy, gScale) {
         let massRatio = obj.mass / CONFIG[obj.type].baseMass;
         let effectiveWarp = CONFIG[obj.type].warpMult;
         
-        // REFINED HIERARCHY LOGIC
+        // REFINED PLANET-SPECIFIC STEEPNESS GROWTH
         if (obj.type === 'planet') {
-            // Smaller planets start shallow, larger planets grow vertically but cap
-            effectiveWarp *= Math.min(2.8, Math.pow(massRatio, 0.75)); 
+            // Stronger vertical growth for mass than before, but still capped relative to stars
+            effectiveWarp *= Math.min(3.5, Math.pow(massRatio, 0.9)); 
         } else if (obj.type === 'star') {
-            // Stars scale with mass to maintain dominance
-            effectiveWarp *= (0.85 + Math.sqrt(massRatio) * 0.3); 
+            effectiveWarp *= (0.8 + Math.sqrt(massRatio) * 0.4); 
         } else {
             effectiveWarp *= Math.sqrt(massRatio);
         }
@@ -134,7 +133,7 @@ function project(x, y, z) {
     return { px: (x1 * cam.zoom) + canvas.width/2 + cam.x, py: (y2 * cam.zoom) + canvas.height/2 + cam.y, zs: zs };
 }
 
-// Input Controllers
+// Controls
 window.onmousedown = (e) => {
     if (e.target !== canvas) return;
     startX = e.clientX; startY = e.clientY; curX = e.clientX; curY = e.clientY;
@@ -208,7 +207,7 @@ function handleDeploy(sx, sy, cx, cy) {
     if (currentMode === 'directional') { 
         vx = (sx - cx) * 0.25; vy = (sy - cy) * 0.25; 
     } else if (currentMode === 'orbital') {
-        const nearest = objects.reduce((prev, curr) => Math.hypot(wX-prev.x, wY-prev.y) < Math.hypot(wX-prev.x, wY-prev.y) ? curr : prev, objects[0]);
+        const nearest = objects.reduce((prev, curr) => Math.hypot(wX-curr.x, wY-curr.y) < Math.hypot(wX-prev.x, wY-prev.y) ? curr : prev, objects[0]);
         if (nearest) {
             const dx = wX - nearest.x, dy = wY - nearest.y, r = Math.sqrt(dx*dx + dy*dy);
             const speed = Math.sqrt((CONFIG.PHYSICS_G * nearest.mass) / r);
