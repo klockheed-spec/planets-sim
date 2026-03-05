@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>K-SPEC // MOBILE_ORBIT_TRAILS</title>
+    <title>K-SPEC // PHYSICS_RECALIBRATED</title>
     <style>
         body { margin: 0; background: #000; color: #0ff; font-family: sans-serif; overflow: hidden; touch-action: none; height: 100dvh; width: 100vw; }
         canvas { display: block; position: fixed; top: 0; left: 0; }
@@ -20,7 +20,6 @@
         label { font-size: 9px; color: #ccc; text-transform: uppercase; letter-spacing: 1px; }
         input[type=range] { width: 100%; accent-color: #0ff; cursor: pointer; height: 20px; }
         .check-row { display: flex; align-items: center; gap: 8px; font-size: 10px; color: #0ff; cursor: pointer; }
-        input[type=checkbox] { accent-color: #0ff; }
     </style>
 </head>
 <body>
@@ -61,7 +60,7 @@
         <div><label>Sim Speed</label><input type="range" id="speed-slider" min="0" max="2" step="0.1" value="1"></div>
         <div><label>G-Scale</label><input type="range" id="warp-slider" min="1" max="25" step="0.1" value="5"></div>
         <label class="check-row">
-            <input type="checkbox" id="trail-toggle"> SHOW ORBIT LINES
+            <input type="checkbox" id="trail-toggle" checked> SHOW ORBIT LINES
         </label>
     </div>
 </div>
@@ -98,23 +97,30 @@ function updateUI() {
     if(document.getElementById(`nav-${currentNav}`)) document.getElementById(`nav-${currentNav}`).classList.add('active');
 }
 
-function getVertex(ox, oy, gScale) {
+// Mass-scaled depth logic
+function getDepth(ox, oy, gScale) {
     let wz = 0, totalTension = 0;
     const depthMod = 1 + (gScale - 1) * 0.2;
     const reachMod = 1 + (gScale - 1) * 0.45;
     for (let obj of objects) {
         let dx = obj.x - ox, dy = obj.y - oy;
         let distSq = dx*dx + dy*dy;
+        let massRatio = Math.sqrt(obj.mass / CONFIG[obj.type].baseMass);
         let sigma = ((obj.size * 2.0) + (40 * Math.sqrt(obj.mass / 25000))) * reachMod * CONFIG[obj.type].reach;
         let influence = Math.exp(-distSq / (2 * sigma * sigma));
-        wz -= (CONFIG.BASE_DEPTH * depthMod * CONFIG[obj.type].warpMult) * influence;
+        // Applied massRatio to deepen well
+        wz -= (CONFIG.BASE_DEPTH * depthMod * CONFIG[obj.type].warpMult * massRatio) * influence;
         totalTension += influence;
     }
-    const x1 = ox * Math.cos(cam.rotZ) - oy * Math.sin(cam.rotZ);
-    const y1 = ox * Math.sin(cam.rotZ) + oy * Math.cos(cam.rotZ);
-    const y2 = y1 * Math.cos(cam.rotX) - wz * Math.sin(cam.rotX);
-    const zs = y1 * Math.sin(cam.rotX) + wz * Math.cos(cam.rotX);
-    return { px: (x1 * cam.zoom) + canvas.width/2 + cam.x, py: (y2 * cam.zoom) + canvas.height/2 + cam.y, zs, tension: Math.min(totalTension, 1), wz: wz };
+    return { z: wz, tension: Math.min(totalTension, 1) };
+}
+
+function project(x, y, z) {
+    const x1 = x * Math.cos(cam.rotZ) - y * Math.sin(cam.rotZ);
+    const y1 = x * Math.sin(cam.rotZ) + y * Math.cos(cam.rotZ);
+    const y2 = y1 * Math.cos(cam.rotX) - z * Math.sin(cam.rotX);
+    const zs = y1 * Math.sin(cam.rotX) + z * Math.cos(cam.rotX);
+    return { px: (x1 * cam.zoom) + canvas.width/2 + cam.x, py: (y2 * cam.zoom) + canvas.height/2 + cam.y, zs: zs };
 }
 
 canvas.addEventListener('touchstart', (e) => {
@@ -166,7 +172,13 @@ canvas.addEventListener('touchend', (e) => {
         if (currentMode === 'directional') { 
             vx = (startX - curX) * 0.25; vy = (startY - curY) * 0.25; 
         } else if (currentMode === 'orbital') {
-            const nearest = objects.find(o => o.isStatic);
+            // Recalculated for grown stars
+            const nearest = objects.reduce((prev, curr) => {
+                let dPrev = Math.hypot(wX-prev.x, wY-prev.y);
+                let dCurr = Math.hypot(wX-curr.x, wY-curr.y);
+                return dCurr < dPrev ? curr : prev;
+            }, objects[0]);
+
             if (nearest) {
                 const dx = wX - nearest.x, dy = wY - nearest.y, r = Math.sqrt(dx*dx + dy*dy);
                 const speed = Math.sqrt((CONFIG.PHYSICS_G * nearest.mass) / r);
@@ -200,101 +212,70 @@ function update() {
             a.vx += ((f * dx / d) / a.mass) * simSpeed; a.vy += ((f * dy / d) / a.mass) * simSpeed;
         }
         a.x += a.vx * simSpeed; a.y += a.vy * simSpeed;
-        
-        // Add trail point
         if (showTrails) {
             a.trail.push({x: a.x, y: a.y});
-            if (a.trail.length > 150) a.trail.shift();
-        } else {
-            a.trail = [];
-        }
+            if (a.trail.length > 80) a.trail.shift();
+        } else { a.trail = []; }
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const res = Math.floor(85 * (1 + (gScale-1) * 0.05));
+    const res = Math.floor(75 * (1 + (gScale-1) * 0.05));
     const bound = CONFIG.gridSize;
-    let grid = [];
-    for (let i = -bound; i <= bound; i += res) {
-        let row = [];
-        for (let j = -bound; j <= bound; j += res) { row.push(getVertex(i, j, gScale)); }
-        grid.push(row);
-    }
+    let renderQueue = [];
 
-    for (let i = 0; i < grid.length; i++) {
-        for (let j = 0; j < grid[i].length; j++) {
-            const p1 = grid[i][j];
-            ctx.strokeStyle = `rgb(${p1.tension * 120}, ${68 + p1.tension * 187}, ${102 + p1.tension * 153})`;
-            if (i < grid.length - 1) { ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(grid[i+1][j].px, grid[i+1][j].py); ctx.stroke(); }
-            if (j < grid[i].length - 1) { ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(grid[i][j+1].px, grid[i][j+1].py); ctx.stroke(); }
+    for (let i = -bound; i <= bound; i += res) {
+        for (let j = -bound; j <= bound; j += res) {
+            const d1 = getDepth(i, j, gScale);
+            const p1 = project(i, j, d1.z);
+            if (i < bound) {
+                const d2 = getDepth(i + res, j, gScale);
+                renderQueue.push({type: 'line', p1, p2: project(i+res, j, d2.z), tension: d1.tension, zs: p1.zs});
+            }
+            if (j < bound) {
+                const d3 = getDepth(i, j + res, gScale);
+                renderQueue.push({type: 'line', p1, p2: project(i, j+res, d3.z), tension: d1.tension, zs: p1.zs});
+            }
         }
     }
 
     objects.forEach(obj => {
-        const v = getVertex(obj.x, obj.y, gScale);
-        const liftValue = obj.size * CONFIG[obj.type].lift;
-        
-        // Render Trail
-        if (showTrails && obj.trail.length > 1) {
-            ctx.beginPath();
-            ctx.strokeStyle = CONFIG[obj.type].color + "88"; 
-            ctx.lineWidth = 2 * cam.zoom;
-            for(let k=0; k<obj.trail.length; k++){
-                const tp = obj.trail[k];
-                const tv = getDepth(tp.x, tp.y, gScale); // Simplified depth for performance
-                const tProj = projectSimple(tp.x, tp.y, tv, cam);
-                if(k === 0) ctx.moveTo(tProj.px, tProj.py);
-                else ctx.lineTo(tProj.px, tProj.py);
-            }
-            ctx.stroke();
-        }
+        const d = getDepth(obj.x, obj.y, gScale);
+        const p = project(obj.x, obj.y, d.z + (obj.size * CONFIG[obj.type].lift));
+        renderQueue.push({type: 'obj', obj, p, zs: p.zs, trail: obj.trail});
+    });
 
-        const x1 = obj.x * Math.cos(cam.rotZ) - obj.y * Math.sin(cam.rotZ);
-        const y1 = obj.x * Math.sin(cam.rotZ) + obj.y * Math.cos(cam.rotZ);
-        const y2 = y1 * Math.cos(cam.rotX) - (v.wz + liftValue) * Math.sin(cam.rotX);
-        const finalPX = (x1 * cam.zoom) + canvas.width/2 + cam.x;
-        const finalPY = (y2 * cam.zoom) + canvas.height/2 + cam.y;
-        ctx.fillStyle = CONFIG[obj.type].color;
-        ctx.beginPath(); ctx.arc(finalPX, finalPY, obj.size * cam.zoom, 0, Math.PI * 2); ctx.fill();
-        if (obj.type === 'blackhole') { ctx.strokeStyle = '#f11'; ctx.stroke(); }
+    renderQueue.sort((a, b) => a.zs - b.zs).forEach(item => {
+        if (item.type === 'line') {
+            ctx.strokeStyle = `rgb(${item.tension * 120}, ${68 + item.tension * 187}, ${102 + item.tension * 153})`;
+            ctx.beginPath(); ctx.moveTo(item.p1.px, item.p1.py); ctx.lineTo(item.p2.px, item.p2.py); ctx.stroke();
+        } else {
+            if (showTrails && item.trail.length > 1) {
+                ctx.beginPath(); ctx.strokeStyle = CONFIG[item.obj.type].color + "55";
+                item.trail.forEach((tp, k) => {
+                    const tv = getDepth(tp.x, tp.y, gScale);
+                    const tProj = project(tp.x, tp.y, tv.z);
+                    if(k===0) ctx.moveTo(tProj.px, tProj.py); else ctx.lineTo(tProj.px, tProj.py);
+                });
+                ctx.stroke();
+            }
+            ctx.fillStyle = CONFIG[item.obj.type].color;
+            ctx.beginPath(); ctx.arc(item.p.px, item.p.py, item.obj.size * cam.zoom, 0, Math.PI * 2); ctx.fill();
+        }
     });
 
     if (isPointerDown && !isMultiTouch) {
-        const currentSize = (CONFIG[currentType].minSize + (dragMass / CONFIG[currentType].factor)) * cam.zoom;
-        ctx.save(); ctx.setLineDash([5, 5]);
-        ctx.strokeStyle = CONFIG[currentType].color === '#000' ? '#f11' : CONFIG[currentType].color;
-        ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(startX, startY, currentSize, 0, Math.PI * 2); ctx.stroke();
+        ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = CONFIG[currentType].color;
+        ctx.beginPath(); ctx.arc(startX, startY, (CONFIG[currentType].minSize + (dragMass/CONFIG[currentType].factor))*cam.zoom, 0, Math.PI*2); ctx.stroke();
         if (currentMode === 'directional') {
-            ctx.setLineDash([]); ctx.strokeStyle = '#0ff'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(startX + (startX - curX), startY + (startY - curY)); ctx.stroke();
+            ctx.setLineDash([]); ctx.strokeStyle = '#0ff'; ctx.beginPath();
+            ctx.moveTo(startX, startY); ctx.lineTo(startX + (startX - curX), startY + (startY - curY)); ctx.stroke();
         }
         ctx.restore();
     }
     requestAnimationFrame(update);
 }
 
-// Helper for Trail Projection performance
-function getDepth(ox, oy, gScale) {
-    let wz = 0;
-    const depthMod = 1 + (gScale - 1) * 0.2;
-    const reachMod = 1 + (gScale - 1) * 0.45;
-    for (let obj of objects) {
-        let dx = obj.x - ox, dy = obj.y - oy;
-        let distSq = dx*dx + dy*dy;
-        let sigma = ((obj.size * 2.0) + (40 * Math.sqrt(obj.mass / 25000))) * reachMod * CONFIG[obj.type].reach;
-        let influence = Math.exp(-distSq / (2 * sigma * sigma));
-        wz -= (CONFIG.BASE_DEPTH * depthMod * CONFIG[obj.type].warpMult) * influence;
-    }
-    return wz;
-}
-function projectSimple(x, y, z, c) {
-    const x1 = x * Math.cos(c.rotZ) - y * Math.sin(c.rotZ);
-    const y1 = x * Math.sin(c.rotZ) + y * Math.cos(c.rotZ);
-    const y2 = y1 * Math.cos(c.rotX) - z * Math.sin(c.rotX);
-    return { px: (x1 * c.zoom) + canvas.width/2 + c.x, py: (y2 * c.zoom) + canvas.height/2 + c.y };
-}
-
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 update();
 updateUI();
 </script>
