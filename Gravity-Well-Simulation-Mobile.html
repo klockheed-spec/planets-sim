@@ -2,27 +2,58 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>K-SPEC // MOBILE_ORIENTATION_SYNC</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>K-SPEC // MOBILE_FULLSCREEN_SYNC</title>
     <style>
-        body { margin: 0; background: #000; color: #0ff; font-family: sans-serif; overflow: hidden; touch-action: none; }
-        canvas { display: block; width: 100vw; height: 100vh; }
-        #ui-wrapper { position: absolute; top: 10px; left: 10px; z-index: 100; width: 220px; max-width: 80vw; }
-        #menu-toggle { background: #044; color: #fff; border: 1px solid #0ff; padding: 12px; width: 100%; text-align: left; font-weight: bold; cursor: pointer; border-radius: 4px; }
-        #controls-content { background: rgba(0, 10, 20, 0.9); border: 1px solid #044; padding: 15px; display: none; flex-direction: column; gap: 12px; border-radius: 0 0 4px 4px; margin-top: -1px; }
-        #controls-content.open { display: flex; }
-        .btn-group { display: flex; flex-direction: column; gap: 5px; }
-        .row { display: flex; gap: 5px; }
-        button { background: #001520; border: 1px solid #044; color: #0ff; padding: 10px; font-size: 11px; text-transform: uppercase; cursor: pointer; flex: 1; }
+        body { 
+            margin: 0; 
+            background: #000; 
+            color: #0ff; 
+            font-family: sans-serif; 
+            overflow: hidden; 
+            touch-action: none;
+            height: 100dvh; 
+            width: 100vw;
+        }
+        canvas { display: block; position: fixed; top: 0; left: 0; }
+        
+        /* UI Panels */
+        .panel { position: absolute; z-index: 100; width: 200px; max-width: 40vw; }
+        .left-panel { top: 10px; left: 10px; }
+        .right-panel { top: 10px; right: 10px; }
+        
+        .toggle-btn { 
+            background: #044; color: #fff; border: 1px solid #0ff; 
+            padding: 10px; width: 100%; text-align: left; 
+            font-weight: bold; cursor: pointer; border-radius: 4px;
+            font-size: 10px;
+        }
+        
+        .content { 
+            background: rgba(0, 10, 20, 0.9); border: 1px solid #044; 
+            padding: 12px; display: none; flex-direction: column; 
+            gap: 10px; border-radius: 0 0 4px 4px; margin-top: -1px; 
+        }
+        .content.open { display: flex; }
+
+        .btn-group { display: flex; flex-direction: column; gap: 4px; }
+        .row { display: flex; gap: 4px; }
+        button { 
+            background: #001520; border: 1px solid #044; color: #0ff; 
+            padding: 8px; font-size: 10px; text-transform: uppercase; 
+            cursor: pointer; flex: 1; 
+        }
         button.active { background: #0ff; color: #000; font-weight: bold; }
-        label { font-size: 10px; color: #ccc; text-transform: uppercase; letter-spacing: 1px; }
+        
+        label { font-size: 9px; color: #ccc; text-transform: uppercase; letter-spacing: 1px; }
+        input[type=range] { width: 100%; accent-color: #0ff; cursor: pointer; height: 20px; }
     </style>
 </head>
 <body>
 
-<div id="ui-wrapper">
-    <button id="menu-toggle" onclick="toggleMenu()">☰ SETTINGS</button>
-    <div id="controls-content" class="open">
+<div class="panel left-panel">
+    <button class="toggle-btn" onclick="togglePanel('left-content')">☰ OBJECTS / NAV</button>
+    <div id="left-content" class="content open">
         <div class="btn-group">
             <label>Object Type</label>
             <div class="row">
@@ -34,19 +65,33 @@
         <div class="btn-group">
             <label>Nav Mode</label>
             <div class="row">
-                <button id="nav-pan" onclick="setNav('pan')" class="active">Zoom/Pan</button>
-                <button id="nav-rotate" onclick="setNav('rotate')">3D Rotate</button>
+                <button id="nav-pan" onclick="setNav('pan')" class="active">Pan</button>
+                <button id="nav-rotate" onclick="setNav('rotate')">Rotate</button>
             </div>
         </div>
         <div class="btn-group">
-            <label>Deployment</label>
+            <label>Deploy</label>
             <div class="row">
                 <button id="mode-static" onclick="setMode('static')" class="active">Static</button>
                 <button id="mode-orbital" onclick="setMode('orbital')">Orbit</button>
                 <button id="mode-directional" onclick="setMode('directional')">Launch</button>
             </div>
         </div>
-        <button onclick="resetSim()" style="color: #f88; border-color: #600; margin-top: 5px;">RESET UNIVERSE</button>
+        <button onclick="resetSim()" style="color: #f88; border-color: #600;">RESET</button>
+    </div>
+</div>
+
+<div class="panel right-panel">
+    <button class="toggle-btn" onclick="togglePanel('right-content')">⚙ PHYSICS ☰</button>
+    <div id="right-content" class="content open">
+        <div>
+            <label>Sim Speed</label>
+            <input type="range" id="speed-slider" min="0" max="2" step="0.1" value="1">
+        </div>
+        <div>
+            <label>G-Scale</label>
+            <input type="range" id="warp-slider" min="1" max="25" step="0.1" value="5">
+        </div>
     </div>
 </div>
 
@@ -70,7 +115,7 @@ const CONFIG = {
     PHYSICS_G: 2.2, gridSize: 6000, BASE_DEPTH: 360 
 };
 
-function toggleMenu() { document.getElementById('controls-content').classList.toggle('open'); }
+function togglePanel(id) { document.getElementById(id).classList.toggle('open'); }
 function setType(t) { currentType = t; updateUI(); }
 function setMode(m) { currentMode = m; updateUI(); }
 function setNav(n) { currentNav = n; updateUI(); }
@@ -161,15 +206,17 @@ canvas.addEventListener('touchend', (e) => {
     isPointerDown = false; isMultiTouch = false;
 });
 
-// RESIZE AND ORIENTATION DETECTION
+// FULL SCREEN RE-CENTER LOGIC
 window.addEventListener('resize', () => {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    updateUI();
 });
 
 function update() {
+    const simSpeed = parseFloat(document.getElementById('speed-slider').value);
+    const gScale = parseFloat(document.getElementById('warp-slider').value);
     if (isPointerDown) dragMass += 15000;
+
     for(let i = 0; i < objects.length; i++) {
         let a = objects[i]; if (a.isStatic) continue;
         for(let j = 0; j < objects.length; j++) {
@@ -180,17 +227,17 @@ function update() {
             }
             if (d < 20) continue;
             let f = (CONFIG.PHYSICS_G * a.mass * b.mass) / (d*d);
-            a.vx += ((f * dx / d) / a.mass); a.vy += ((f * dy / d) / a.mass);
+            a.vx += ((f * dx / d) / a.mass) * simSpeed; a.vy += ((f * dy / d) / a.mass) * simSpeed;
         }
-        a.x += a.vx; a.y += a.vy;
+        a.x += a.vx * simSpeed; a.y += a.vy * simSpeed;
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const bound = CONFIG.gridSize;
     let grid = [];
-    for (let i = -bound; i <= bound; i += 80) {
+    for (let i = -bound; i <= bound; i += 85) {
         let row = [];
-        for (let j = -bound; j <= bound; j += 80) { row.push(getVertex(i, j, 5.0)); }
+        for (let j = -bound; j <= bound; j += 85) { row.push(getVertex(i, j, gScale)); }
         grid.push(row);
     }
 
@@ -204,7 +251,7 @@ function update() {
     }
 
     objects.forEach(obj => {
-        const v = getVertex(obj.x, obj.y, 5.0);
+        const v = getVertex(obj.x, obj.y, gScale);
         const liftValue = obj.size * CONFIG[obj.type].lift;
         const x1 = obj.x * Math.cos(cam.rotZ) - obj.y * Math.sin(cam.rotZ);
         const y1 = obj.x * Math.sin(cam.rotZ) + obj.y * Math.cos(cam.rotZ);
