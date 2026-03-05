@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Spacetime: High-Performance Singularity</title>
+    <style>
+        body { margin: 0; background: #000; color: #0ff; font-family: 'Courier New', monospace; overflow: hidden; user-select: none; }
+        canvas { display: block; }
+        #ui, #controls-panel { position: absolute; background: rgba(0,10,20,0.9); padding: 15px; border: 1px solid #044; z-index: 10; pointer-events: auto; }
+        #ui { top: 20px; left: 20px; display: flex; flex-direction: column; gap: 10px; }
+        #controls-panel { top: 20px; right: 20px; width: 220px; display: flex; flex-direction: column; gap: 15px; }
+        .group { display: flex; gap: 5px; }
+        button { background: #001520; border: 1px solid #044; color: #0ff; padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 10px; flex: 1; }
+        button.active { background: #0ff; color: #000; font-weight: bold; }
+        #reset-btn { background: #300; border-color: #f00; color: #f88; margin-top: 5px; }
+        label { font-size: 10px; text-transform: uppercase; color: #fff; }
+        input[type=range] { width: 100%; cursor: pointer; accent-color: #0ff; }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <div class="group">
+        <button id="type-star" onclick="setType('star')" class="active">Star</button>
+        <button id="type-planet" onclick="setType('planet')">Planet</button>
+        <button id="type-blackhole" onclick="setType('blackhole')">Black Hole</button>
+    </div>
+    <div class="group">
+        <button id="mode-static" onclick="setMode('static')" class="active">Static</button>
+        <button id="mode-orbital" onclick="setMode('orbital')">Orbital</button>
+        <button id="mode-directional" onclick="setMode('directional')">Directional</button>
+    </div>
+    <button id="reset-btn" onclick="resetSim()">RESET SIMULATION</button>
+</div>
+
+<div id="controls-panel">
+    <div class="group"><label>Speed</label><input type="range" id="speed-slider" min="0" max="2" step="0.1" value="1"></div>
+    <div class="group"><label>G-Scale (Expansion)</label><input type="range" id="warp-slider" min="1" max="25" step="0.1" value="5"></div>
+</div>
+
+<canvas id="sim"></canvas>
+
+<script>
+const canvas = document.getElementById('sim');
+const ctx = canvas.getContext('2d');
+
+let objects = [];
+// Initialized to Star and Static
+let currentType = 'star', currentMode = 'static', dragMass = 0;
+let isLDown = false, isRDown = false, isMDown = false;
+let startX, startY, curX, curY;
+
+let cam = { x: 0, y: 150, zoom: 0.5, rotX: 1.15, rotZ: 0.5 };
+
+const CONFIG = {
+    // Lift set to 1.0 for Stars
+    star: { baseMass: 85000, color: '#ffff00', minSize: 45, lift: 1.0, warpMult: 1.0, reach: 1.0, factor: 15000 },
+    planet: { baseMass: 1000, color: '#00ff00', minSize: 10, lift: 0.6, warpMult: 0.2, reach: 0.8, factor: 15000 }, 
+    blackhole: { baseMass: 2500000, color: '#000', minSize: 7.5, lift: -0.5, warpMult: 15.0, reach: 0.25, factor: 30000 },
+    PHYSICS_G: 2.2, gridSize: 6000, BASE_DEPTH: 360 
+};
+
+
+const speedInput = document.getElementById('speed-slider');
+const warpInput = document.getElementById('warp-slider');
+
+function setType(t) { currentType = t; updateUI(); }
+function setMode(m) { currentMode = m; updateUI(); }
+function resetSim() { objects = []; }
+function updateUI() {
+    document.querySelectorAll('#ui button').forEach(b => b.classList.remove('active'));
+    document.getElementById(`type-${currentType}`).classList.add('active');
+    document.getElementById(`mode-${currentMode}`).classList.add('active');
+}
+
+// Logic separated: Physics vs Projection
+function getDepth(ox, oy, gScale) {
+    let wz = 0, totalTension = 0;
+    const expansionFactor = 1 + (gScale - 1) * 0.45;
+    for (let i = 0; i < objects.length; i++) {
+        const obj = objects[i];
+        const dx = obj.x - ox, dy = obj.y - oy;
+        const distSq = dx*dx + dy*dy;
+        const massFactor = Math.sqrt(obj.mass / 25000);
+        const sigma = ((obj.size * 2.0) + (40 * massFactor)) * expansionFactor * CONFIG[obj.type].reach;
+        const influence = Math.exp(-distSq / (2 * sigma * sigma));
+        wz -= (CONFIG.BASE_DEPTH * CONFIG[obj.type].warpMult) * influence;
+        totalTension += influence;
+    }
+    return { z: wz, tension: Math.min(totalTension, 1) };
+}
+
+function project(x, y, z) {
+    const x1 = x * Math.cos(cam.rotZ) - y * Math.sin(cam.rotZ);
+    const y1 = x * Math.sin(cam.rotZ) + y * Math.cos(cam.rotZ);
+    const y2 = y1 * Math.cos(cam.rotX) - z * Math.sin(cam.rotX);
+    const zs = y1 * Math.sin(cam.rotX) + z * Math.cos(cam.rotX);
+    return { px: (x1 * cam.zoom) + canvas.width/2 + cam.x, py: (y2 * cam.zoom) + canvas.height/2 + cam.y, zs: zs };
+}
+
+function getIntensityColor(t) {
+    return `rgb(${Math.floor(t * 120)}, ${Math.floor(68 + (t * 187))}, ${Math.floor(102 + (t * 153))})`;
+}
+
+function screenToWorld(sx, sy) {
+    const dx = (sx - canvas.width/2 - cam.x) / cam.zoom;
+    const dy = (sy - canvas.height/2 - cam.y) / (cam.zoom * Math.cos(cam.rotX));
+    const x = dx * Math.cos(-cam.rotZ) - dy * Math.sin(-cam.rotZ);
+    const y = dx * Math.sin(-cam.rotZ) + dy * Math.cos(-cam.rotZ);
+    return { x, y };
+}
+
+window.onmousedown = (e) => {
+    if (e.target !== canvas) return;
+    startX = e.clientX; startY = e.clientY;
+    curX = e.clientX; curY = e.clientY;
+    if (e.button === 0) { isLDown = true; dragMass = CONFIG[currentType].baseMass; }
+    if (e.button === 2) isRDown = true;
+    if (e.button === 1) isMDown = true;
+};
+
+window.onmousemove = (e) => {
+    if (isRDown) {
+        cam.rotZ += (e.clientX - curX) * 0.01;
+        cam.rotX = Math.max(0.1, Math.min(Math.PI/2, cam.rotX + (e.clientY - curY) * 0.01));
+    }
+    if (isMDown) { cam.x += e.clientX - curX; cam.y += e.clientY - curY; }
+    curX = e.clientX; curY = e.clientY;
+};
+
+window.onmouseup = (e) => {
+    if (e.button === 0 && isLDown) {
+        const worldPos = screenToWorld(startX, startY);
+        let vx = 0, vy = 0;
+        if (currentMode === 'directional') {
+            vx = (startX - curX) * 0.1; vy = (startY - curY) * 0.1;
+        } else if (currentMode === 'orbital') {
+            const nearest = objects.find(o => o.isStatic);
+            if (nearest) {
+                const dx = worldPos.x - nearest.x, dy = worldPos.y - nearest.y, r = Math.sqrt(dx*dx + dy*dy);
+                const speed = Math.sqrt((CONFIG.PHYSICS_G * nearest.mass) / r);
+                vx = -(dy/r) * speed; vy = (dx/r) * speed;
+            }
+        }
+        objects.push({ x: worldPos.x, y: worldPos.y, vx, vy, mass: dragMass, type: currentType, isStatic: (currentMode === 'static'), size: CONFIG[currentType].minSize + (dragMass / 15000) });
+    }
+    isLDown = isRDown = isMDown = false;
+};
+
+canvas.onwheel = (e) => { cam.zoom *= e.deltaY > 0 ? 0.9 : 1.1; };
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+function update() {
+    const simSpeed = parseFloat(speedInput.value);
+    const gScale = parseFloat(warpInput.value);
+    if (isLDown) dragMass += 15000;
+
+    for(let i = 0; i < objects.length; i++) {
+        let a = objects[i]; if (a.isStatic) continue;
+        for(let j = 0; j < objects.length; j++) {
+            if (i === j) continue;
+            let b = objects[j]; let dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx*dx + dy*dy);
+            if (d < (a.size + b.size) * 0.5) {
+                if (b.type === 'blackhole' || b.mass > a.mass) { b.mass += a.mass; b.size += a.size * 0.1; objects.splice(i, 1); i--; break; }
+            }
+            if (d < 20) continue;
+            let f = (CONFIG.PHYSICS_G * a.mass * b.mass) / (d*d);
+            a.vx += ((f * dx / d) / a.mass) * simSpeed; a.vy += ((f * dy / d) / a.mass) * simSpeed;
+        }
+        a.x += a.vx * simSpeed; a.y += a.vy * simSpeed;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const res = Math.floor(55 * (1 + (gScale-1) * 0.08));
+    const bound = CONFIG.gridSize;
+    let renderQueue = [];
+
+    const gridPoints = [];
+    for (let i = -bound; i <= bound; i += res) {
+        const row = [];
+        for (let j = -bound; j <= bound; j += res) {
+            const d = getDepth(i, j, gScale);
+            row.push({ ...project(i, j, d.z), tension: d.tension });
+        }
+        gridPoints.push(row);
+    }
+
+    for (let i = 0; i < gridPoints.length; i++) {
+        for (let j = 0; j < gridPoints[i].length; j++) {
+            const p1 = gridPoints[i][j];
+            if (i < gridPoints.length - 1) {
+                const p2 = gridPoints[i+1][j];
+                renderQueue.push({ type: 'line', p1, p2, zs: (p1.zs + p2.zs)/2 });
+            }
+            if (j < gridPoints[i].length - 1) {
+                const p3 = gridPoints[i][j+1];
+                renderQueue.push({ type: 'line', p1, p2: p3, zs: (p1.zs + p3.zs)/2 });
+            }
+        }
+    }
+
+    objects.forEach(obj => {
+        const d = getDepth(obj.x, obj.y, gScale);
+        const liftValue = obj.size * CONFIG[obj.type].lift;
+        const p = project(obj.x, obj.y, d.z + liftValue);
+        renderQueue.push({ type: 'obj', obj, p, zs: p.zs });
+    });
+
+    renderQueue.sort((a, b) => a.zs - b.zs);
+
+    renderQueue.forEach(item => {
+        if (item.type === 'line') {
+            ctx.beginPath();
+            ctx.strokeStyle = getIntensityColor(item.p1.tension);
+            ctx.lineWidth = 1;
+            ctx.moveTo(item.p1.px, item.p1.py); ctx.lineTo(item.p2.px, item.p2.py);
+            ctx.stroke();
+        } else {
+            const {p, obj} = item;
+            const s = obj.size * cam.zoom;
+            ctx.save(); ctx.translate(p.px, p.py);
+            ctx.beginPath(); ctx.arc(0, 0, s, 0, Math.PI * 2);
+            ctx.fillStyle = CONFIG[obj.type].color;
+            ctx.fill();
+            if (obj.type === 'blackhole') { ctx.strokeStyle = '#f11'; ctx.lineWidth = 1; ctx.stroke(); }
+            ctx.restore();
+        }
+    });
+
+    if (isLDown && currentMode === 'directional') {
+        ctx.strokeStyle = '#0ff'; ctx.lineWidth = 2; ctx.beginPath();
+        ctx.moveTo(startX, startY); ctx.lineTo(startX + (startX - curX), startY + (startY - curY));
+        ctx.stroke();
+    }
+    requestAnimationFrame(update);
+}
+
+window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+update();
+</script>
+</body>
+</html>
