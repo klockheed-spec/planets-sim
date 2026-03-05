@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>K-SPEC // MASS_DEPTH_SYNC</title>
+    <title>K-SPEC // GRAVITY_HIERARCHY_FIX</title>
     <style>
         body { margin: 0; background: #000; color: #0ff; font-family: sans-serif; overflow: hidden; touch-action: none; height: 100dvh; width: 100vw; }
         canvas { display: block; position: fixed; top: 0; left: 0; }
@@ -79,8 +79,8 @@ let initialPinchDist = 0, initialZoom = 1, initialPinchAngle = 0, initialRotZ = 
 let cam = { x: 0, y: 150, zoom: 0.5, rotX: 1.15, rotZ: 0.5 };
 
 const CONFIG = {
-    star: { baseMass: 85000, color: '#ffff00', minSize: 45, lift: 1.0, warpMult: 1.0, reach: 1.0, factor: 15000 },
-    planet: { baseMass: 1000, color: '#00ff00', minSize: 10, lift: 0.6, warpMult: 0.2, reach: 0.8, factor: 15000 }, 
+    star: { baseMass: 85000, color: '#ffff00', minSize: 45, lift: 1.0, warpMult: 1.0, reach: 1.1, factor: 15000 },
+    planet: { baseMass: 1000, color: '#00ff00', minSize: 10, lift: 0.6, warpMult: 0.15, reach: 0.7, factor: 15000 }, 
     blackhole: { baseMass: 2500000, color: '#000', minSize: 7.5, lift: 0.0, warpMult: 10.0, reach: 0.25, factor: 30000 },
     PHYSICS_G: 2.2, gridSize: 6000, BASE_DEPTH: 360 
 };
@@ -105,12 +105,20 @@ function getDepth(ox, oy, gScale) {
         let dx = obj.x - ox, dy = obj.y - oy;
         let distSq = dx*dx + dy*dy;
         
-        // CORRECTION: Scale depth with mass so larger stars dive deeper
+        // HIERARCHY FIX: Hard cap mass influence for planets vs stars
         let massRatio = obj.mass / CONFIG[obj.type].baseMass;
+        let effectiveWarp = CONFIG[obj.type].warpMult;
+        
+        if (obj.type === 'planet') {
+            effectiveWarp *= Math.min(1.5, Math.sqrt(massRatio)); // Limit planet depth
+        } else {
+            effectiveWarp *= Math.sqrt(massRatio);
+        }
+
         let sigma = ((obj.size * 2.0) + (40 * Math.sqrt(obj.mass / 25000))) * reachMod * CONFIG[obj.type].reach;
         let influence = Math.exp(-distSq / (2 * sigma * sigma));
         
-        wz -= (CONFIG.BASE_DEPTH * depthMod * CONFIG[obj.type].warpMult * Math.sqrt(massRatio)) * influence;
+        wz -= (CONFIG.BASE_DEPTH * depthMod * effectiveWarp) * influence;
         totalTension += influence;
     }
     return { z: wz, tension: Math.min(totalTension, 1) };
@@ -124,7 +132,7 @@ function project(x, y, z) {
     return { px: (x1 * cam.zoom) + canvas.width/2 + cam.x, py: (y2 * cam.zoom) + canvas.height/2 + cam.y, zs: zs };
 }
 
-// Unified Desktop & Mobile Input
+// Input Handlers
 window.onmousedown = (e) => {
     if (e.target !== canvas) return;
     startX = e.clientX; startY = e.clientY;
@@ -146,6 +154,7 @@ window.onmouseup = (e) => {
 canvas.onwheel = (e) => { cam.zoom *= e.deltaY > 0 ? 0.9 : 1.1; };
 
 canvas.addEventListener('touchstart', (e) => {
+    if (e.target !== canvas) return;
     e.preventDefault();
     if (e.touches.length === 1) {
         isPointerDown = true; isMultiTouch = false;
@@ -227,7 +236,7 @@ function update() {
             if (i === j) continue;
             let b = objects[j]; let dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx*dx + dy*dy);
             if (d < (a.size + b.size) * 0.5) {
-                if (b.type === 'blackhole' || b.mass > a.mass) { b.mass += a.mass; b.size += a.size * 0.1; objects.splice(i, 1); i--; break; }
+                if (b.type === 'blackhole' || b.mass > a.mass) { b.mass += a.mass; b.size += a.size * 0.05; objects.splice(i, 1); i--; break; }
             }
             if (d < 20) continue;
             let f = (CONFIG.PHYSICS_G * a.mass * b.mass) / (d*d);
