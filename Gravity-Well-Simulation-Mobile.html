@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>K-SPEC // MULTI_BODY_ORBITAL</title>
+    <title>K-SPEC // MIDDLE_MOUSE_PAN_FIX</title>
     <style>
         body { margin: 0; background: #000; color: #0ff; font-family: sans-serif; overflow: hidden; touch-action: none; height: 100dvh; width: 100vw; }
         canvas { display: block; position: fixed; top: 0; left: 0; }
@@ -36,7 +36,7 @@
             <button id="type-blackhole" onclick="setType('blackhole')">Black Hole</button>
         </div>
         <div class="btn-group">
-            <label>Nav Mode</label>
+            <label>Nav Mode (Mobile)</label>
             <div class="row">
                 <button id="nav-pan" onclick="setNav('pan')" class="active">Pan</button>
                 <button id="nav-rotate" onclick="setNav('rotate')">Rotate</button>
@@ -73,7 +73,7 @@ const ctx = canvas.getContext('2d');
 
 let objects = [];
 let currentType = 'star', currentMode = 'static', currentNav = 'pan', dragMass = 0;
-let isPointerDown = false, isRightClick = false, isMultiTouch = false;
+let isPointerDown = false, isRightClick = false, isMiddleClick = false, isMultiTouch = false;
 let startX, startY, curX, curY;
 let initialPinchDist = 0, initialZoom = 1, initialPinchAngle = 0, initialRotZ = 0;
 let cam = { x: 0, y: 150, zoom: 0.5, rotX: 1.15, rotZ: 0.5 };
@@ -106,15 +106,9 @@ function getDepth(ox, oy, gScale) {
         let distSq = dx*dx + dy*dy;
         let massRatio = obj.mass / CONFIG[obj.type].baseMass;
         let effectiveWarp = CONFIG[obj.type].warpMult;
-        
-        if (obj.type === 'planet') {
-            effectiveWarp *= Math.min(3.5, Math.pow(massRatio, 0.9)); 
-        } else if (obj.type === 'star') {
-            effectiveWarp *= (0.8 + Math.sqrt(massRatio) * 0.4); 
-        } else {
-            effectiveWarp *= Math.sqrt(massRatio);
-        }
-
+        if (obj.type === 'planet') { effectiveWarp *= Math.min(3.5, Math.pow(massRatio, 0.9)); }
+        else if (obj.type === 'star') { effectiveWarp *= (0.8 + Math.sqrt(massRatio) * 0.4); }
+        else { effectiveWarp *= Math.sqrt(massRatio); }
         let sigma = ((obj.size * 2.1) + (45 * Math.sqrt(obj.mass / 25000))) * reachMod * CONFIG[obj.type].reach;
         let influence = Math.exp(-distSq / (2 * sigma * sigma));
         wz -= (CONFIG.BASE_DEPTH * depthMod * effectiveWarp) * influence;
@@ -131,10 +125,12 @@ function project(x, y, z) {
     return { px: (x1 * cam.zoom) + canvas.width/2 + cam.x, py: (y2 * cam.zoom) + canvas.height/2 + cam.y, zs: zs };
 }
 
+// DESKTOP MOUSE LOGIC
 window.onmousedown = (e) => {
     if (e.target !== canvas) return;
     startX = e.clientX; startY = e.clientY; curX = e.clientX; curY = e.clientY;
     if (e.button === 0) { isPointerDown = true; dragMass = CONFIG[currentType].baseMass; }
+    if (e.button === 1) { isMiddleClick = true; e.preventDefault(); }
     if (e.button === 2) isRightClick = true;
 };
 
@@ -143,19 +139,21 @@ window.onmousemove = (e) => {
         cam.rotZ += (e.clientX - curX) * 0.01;
         cam.rotX = Math.max(0.1, Math.min(Math.PI/2, cam.rotX + (e.clientY - curY) * 0.01));
     }
+    if (isMiddleClick) {
+        cam.x += (e.clientX - curX);
+        cam.y += (e.clientY - curY);
+    }
     curX = e.clientX; curY = e.clientY;
 };
 
 window.onmouseup = (e) => {
     if (e.button === 0 && isPointerDown) handleDeploy(startX, startY, curX, curY);
-    isPointerDown = isRightClick = false;
+    isPointerDown = isRightClick = isMiddleClick = false;
 };
 
-canvas.onwheel = (e) => {
-    e.preventDefault();
-    cam.zoom *= e.deltaY > 0 ? 0.9 : 1.1;
-};
+canvas.onwheel = (e) => { e.preventDefault(); cam.zoom *= e.deltaY > 0 ? 0.9 : 1.1; };
 
+// TOUCH LOGIC
 canvas.addEventListener('touchstart', (e) => {
     if (e.target !== canvas) return;
     e.preventDefault();
@@ -207,16 +205,11 @@ function handleDeploy(sx, sy, cx, cy) {
     const wX = dxS * Math.cos(-cam.rotZ) - dyS * Math.sin(-cam.rotZ);
     const wY = dxS * Math.sin(-cam.rotZ) + dyS * Math.cos(-cam.rotZ);
     let vx = 0, vy = 0;
-    
-    if (currentMode === 'directional') { 
-        vx = (sx - cx) * 0.25; vy = (sy - cy) * 0.25; 
-    } else if (currentMode === 'orbital') {
-        // IMPROVED: Recognition of multiple static objects
+    if (currentMode === 'directional') { vx = (sx - cx) * 0.25; vy = (sy - cy) * 0.25; } 
+    else if (currentMode === 'orbital') {
         const staticObjects = objects.filter(o => o.isStatic);
         if (staticObjects.length > 0) {
-            const nearest = staticObjects.reduce((prev, curr) => 
-                Math.hypot(wX-curr.x, wY-curr.y) < Math.hypot(wX-prev.x, wY-prev.y) ? curr : prev
-            );
+            const nearest = staticObjects.reduce((prev, curr) => Math.hypot(wX-curr.x, wY-curr.y) < Math.hypot(wX-prev.x, wY-prev.y) ? curr : prev);
             const dx = wX - nearest.x, dy = wY - nearest.y, r = Math.sqrt(dx*dx + dy*dy);
             const speed = Math.sqrt((CONFIG.PHYSICS_G * nearest.mass) / r);
             vx = -(dy/r) * speed; vy = (dx/r) * speed;
@@ -233,7 +226,6 @@ function update() {
     const gScale = parseFloat(document.getElementById('warp-slider').value);
     const showTrails = document.getElementById('trail-toggle').checked;
     if (isPointerDown) dragMass += 15000;
-
     for(let i = 0; i < objects.length; i++) {
         let a = objects[i]; if (a.isStatic) continue;
         for(let j = 0; j < objects.length; j++) {
@@ -249,7 +241,6 @@ function update() {
         a.x += a.vx * simSpeed; a.y += a.vy * simSpeed;
         if (showTrails) { a.trail.push({x: a.x, y: a.y}); if (a.trail.length > 60) a.trail.shift(); } else { a.trail = []; }
     }
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const res = Math.floor(75 * (1 + (gScale-1) * 0.05));
     const bound = CONFIG.gridSize;
@@ -259,7 +250,6 @@ function update() {
         for (let j = -bound; j <= bound; j += res) { row.push(getDepth(i, j, gScale)); }
         gridRows.push(row);
     }
-
     for (let i = 0; i < gridRows.length; i++) {
         for (let j = 0; j < gridRows[i].length; j++) {
             const p1 = project((i*res)-bound, (j*res)-bound, gridRows[i][j].z);
@@ -268,13 +258,12 @@ function update() {
                 const p2 = project(((i+1)*res)-bound, (j*res)-bound, gridRows[i+1][j].z);
                 ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(p2.px, p2.py); ctx.stroke(); 
             }
-            if (j < gridRows[i].length - 1) { 
+            if (j < gridRows.length - 1) { 
                 const p3 = project((i*res)-bound, ((j+1)*res)-bound, gridRows[i][j+1].z);
                 ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(p3.px, p3.py); ctx.stroke(); 
             }
         }
     }
-
     objects.forEach(obj => {
         const d = getDepth(obj.x, obj.y, gScale);
         const p = project(obj.x, obj.y, d.z + (obj.size * CONFIG[obj.type].lift));
@@ -291,7 +280,6 @@ function update() {
         ctx.beginPath(); ctx.arc(p.px, p.py, obj.size * cam.zoom, 0, Math.PI * 2); ctx.fill();
         if (obj.type === 'blackhole') { ctx.strokeStyle = '#f11'; ctx.stroke(); }
     });
-
     if (isPointerDown && !isMultiTouch) {
         ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = CONFIG[currentType].color;
         ctx.beginPath(); ctx.arc(startX, startY, (CONFIG[currentType].minSize + (dragMass/CONFIG[currentType].factor))*cam.zoom, 0, Math.PI*2); ctx.stroke();
@@ -303,9 +291,7 @@ function update() {
     }
     requestAnimationFrame(update);
 }
-window.onresize();
-update();
-updateUI();
+window.onresize(); update(); updateUI();
 </script>
 </body>
 </html>
