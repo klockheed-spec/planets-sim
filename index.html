@@ -10,6 +10,8 @@
             --neon-green: #00ff41;
             --neon-blue: #00f2ff;
             --neon-red: #ff003c;
+            --neon-amber: #ffaa00;
+            --neon-purple: #d000ff;
             --bg-black: #050505;
         }
 
@@ -39,7 +41,6 @@
             pointer-events: none;
         }
 
-        /* Screen Flicker */
         @keyframes flicker {
             0% { opacity: 0.97; }
             5% { opacity: 0.95; }
@@ -108,25 +109,26 @@
             font-size: 1.8rem;
         }
 
+        .card h3 {
+            margin: 10px 0;
+        }
+
         .card p {
             font-size: 1.1rem;
             line-height: 1.2;
         }
 
-        .card.war {
-            border-color: var(--neon-red);
-            color: var(--neon-red);
-        }
+        /* Color Modifiers */
+        .card.war { border-color: var(--neon-red); color: var(--neon-red); }
+        .card.war:hover { background: var(--neon-red); box-shadow: 0 0 30px var(--neon-red); }
 
-        .card.war:hover {
-            background: var(--neon-red);
-            color: black;
-            box-shadow: 0 0 30px var(--neon-red);
-        }
+        .card.gravity-desktop { border-color: var(--neon-amber); color: var(--neon-amber); }
+        .card.gravity-desktop:hover { background: var(--neon-amber); box-shadow: 0 0 30px var(--neon-amber); }
 
-        .glitch {
-            animation: glitch 1s linear infinite;
-        }
+        .card.gravity-mobile { border-color: var(--neon-purple); color: var(--neon-purple); }
+        .card.gravity-mobile:hover { background: var(--neon-purple); box-shadow: 0 0 30px var(--neon-purple); }
+
+        .glitch { animation: glitch 1s linear infinite; }
 
         @keyframes glitch {
             2%, 64% { transform: translate(2px, 0) skew(0deg); }
@@ -140,13 +142,8 @@
             opacity: 0.7;
         }
 
-        .blink {
-            animation: blink 1s step-end infinite;
-        }
-
-        @keyframes blink {
-            50% { opacity: 0; }
-        }
+        .blink { animation: blink 1s step-end infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
     </style>
 </head>
 <body>
@@ -174,6 +171,20 @@
                 <h3>PLANETARY_SIM_3D</h3>
                 <p>Enhanced spatial rendering for mobile hardware interfaces.</p>
                 <p>> RUN SYSTEM_EXEC</p>
+            </a>
+
+            <a href="https://klockheed-spec.github.io/planets-sim/Gravity-Well-Simulation.html" class="card gravity-desktop">
+                <h2>[ 04 ]</h2>
+                <h3>GRAVITY_SIMULATION</h3>
+                <p>Spacetime fabric distortion. High-fidelity singularity rendering.</p>
+                <p>> INITIATE WARP_</p>
+            </a>
+
+            <a href="https://klockheed-spec.github.io/planets-sim/Gravity-Well-Simulation-Mobile.html" class="card gravity-mobile">
+                <h2>[ 05 ]</h2>
+                <h3>GRAVITY_SIM_MOBILE</h3>
+                <p>Touch-optimized gravitational wells. Multi-input spatial logic.</p>
+                <p>> INITIATE WARP_</p>
             </a>
 
             <a href="https://klockheed-spec.github.io/planets-sim/gtnw-dm.html" class="card war">
