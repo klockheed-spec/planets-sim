@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>K-SPEC // MOBILE_3D_ROTATION</title>
+    <title>K-SPEC // MOBILE_ORIENTATION_SYNC</title>
     <style>
         body { margin: 0; background: #000; color: #0ff; font-family: sans-serif; overflow: hidden; touch-action: none; }
-        canvas { display: block; }
+        canvas { display: block; width: 100vw; height: 100vh; }
         #ui-wrapper { position: absolute; top: 10px; left: 10px; z-index: 100; width: 220px; max-width: 80vw; }
         #menu-toggle { background: #044; color: #fff; border: 1px solid #0ff; padding: 12px; width: 100%; text-align: left; font-weight: bold; cursor: pointer; border-radius: 4px; }
         #controls-content { background: rgba(0, 10, 20, 0.9); border: 1px solid #044; padding: 15px; display: none; flex-direction: column; gap: 12px; border-radius: 0 0 4px 4px; margin-top: -1px; }
@@ -16,7 +16,6 @@
         button { background: #001520; border: 1px solid #044; color: #0ff; padding: 10px; font-size: 11px; text-transform: uppercase; cursor: pointer; flex: 1; }
         button.active { background: #0ff; color: #000; font-weight: bold; }
         label { font-size: 10px; color: #ccc; text-transform: uppercase; letter-spacing: 1px; }
-        input[type=range] { width: 100%; accent-color: #0ff; height: 25px; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -61,8 +60,7 @@ let objects = [];
 let currentType = 'star', currentMode = 'static', currentNav = 'pan', dragMass = 0;
 let isPointerDown = false, isMultiTouch = false;
 let startX, startY, curX, curY;
-let initialPinchDist = 0, initialZoom = 1;
-let initialPinchAngle = 0, initialRotZ = 0;
+let initialPinchDist = 0, initialZoom = 1, initialPinchAngle = 0, initialRotZ = 0;
 let cam = { x: 0, y: 150, zoom: 0.5, rotX: 1.15, rotZ: 0.5 };
 
 const CONFIG = {
@@ -103,7 +101,6 @@ function getVertex(ox, oy, gScale) {
     return { px: (x1 * cam.zoom) + canvas.width/2 + cam.x, py: (y2 * cam.zoom) + canvas.height/2 + cam.y, zs, tension: Math.min(totalTension, 1), wz: wz };
 }
 
-// RESTORED 3D ROTATION LOGIC
 canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
     if (e.touches.length === 1) {
@@ -115,8 +112,7 @@ canvas.addEventListener('touchstart', (e) => {
         isPointerDown = false; isMultiTouch = true;
         initialPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         initialPinchAngle = Math.atan2(e.touches[1].clientY - e.touches[0].clientY, e.touches[1].clientX - e.touches[0].clientX);
-        initialZoom = cam.zoom;
-        initialRotZ = cam.rotZ;
+        initialZoom = cam.zoom; initialRotZ = cam.rotZ;
         startX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         startY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     }
@@ -151,9 +147,8 @@ canvas.addEventListener('touchend', (e) => {
         const wX = dxS * Math.cos(-cam.rotZ) - dyS * Math.sin(-cam.rotZ);
         const wY = dxS * Math.sin(-cam.rotZ) + dyS * Math.cos(-cam.rotZ);
         let vx = 0, vy = 0;
-        if (currentMode === 'directional') {
-            vx = (startX - curX) * 0.1; vy = (startY - curY) * 0.1;
-        } else if (currentMode === 'orbital') {
+        if (currentMode === 'directional') { vx = (startX - curX) * 0.1; vy = (startY - curY) * 0.1; }
+        else if (currentMode === 'orbital') {
             const nearest = objects.find(o => o.isStatic);
             if (nearest) {
                 const dx = wX - nearest.x, dy = wY - nearest.y, r = Math.sqrt(dx*dx + dy*dy);
@@ -166,11 +161,15 @@ canvas.addEventListener('touchend', (e) => {
     isPointerDown = false; isMultiTouch = false;
 });
 
-function update() {
-    const simSpeed = 1.0;
-    const gScale = 5.0;
-    if (isPointerDown) dragMass += 15000;
+// RESIZE AND ORIENTATION DETECTION
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    updateUI();
+});
 
+function update() {
+    if (isPointerDown) dragMass += 15000;
     for(let i = 0; i < objects.length; i++) {
         let a = objects[i]; if (a.isStatic) continue;
         for(let j = 0; j < objects.length; j++) {
@@ -181,9 +180,9 @@ function update() {
             }
             if (d < 20) continue;
             let f = (CONFIG.PHYSICS_G * a.mass * b.mass) / (d*d);
-            a.vx += ((f * dx / d) / a.mass) * simSpeed; a.vy += ((f * dy / d) / a.mass) * simSpeed;
+            a.vx += ((f * dx / d) / a.mass); a.vy += ((f * dy / d) / a.mass);
         }
-        a.x += a.vx * simSpeed; a.y += a.vy * simSpeed;
+        a.x += a.vx; a.y += a.vy;
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -191,7 +190,7 @@ function update() {
     let grid = [];
     for (let i = -bound; i <= bound; i += 80) {
         let row = [];
-        for (let j = -bound; j <= bound; j += 80) { row.push(getVertex(i, j, gScale)); }
+        for (let j = -bound; j <= bound; j += 80) { row.push(getVertex(i, j, 5.0)); }
         grid.push(row);
     }
 
@@ -205,7 +204,7 @@ function update() {
     }
 
     objects.forEach(obj => {
-        const v = getVertex(obj.x, obj.y, gScale);
+        const v = getVertex(obj.x, obj.y, 5.0);
         const liftValue = obj.size * CONFIG[obj.type].lift;
         const x1 = obj.x * Math.cos(cam.rotZ) - obj.y * Math.sin(cam.rotZ);
         const y1 = obj.x * Math.sin(cam.rotZ) + obj.y * Math.cos(cam.rotZ);
@@ -227,8 +226,8 @@ function update() {
     requestAnimationFrame(update);
 }
 
-window.onresize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; updateUI(); };
-window.onresize();
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 update();
 </script>
 </body>
