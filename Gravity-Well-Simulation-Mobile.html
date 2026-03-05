@@ -3,48 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>K-SPEC // MOBILE_FULLSCREEN_SYNC</title>
+    <title>K-SPEC // MOBILE_LAUNCH_RESTORED</title>
     <style>
-        body { 
-            margin: 0; 
-            background: #000; 
-            color: #0ff; 
-            font-family: sans-serif; 
-            overflow: hidden; 
-            touch-action: none;
-            height: 100dvh; 
-            width: 100vw;
-        }
+        body { margin: 0; background: #000; color: #0ff; font-family: sans-serif; overflow: hidden; touch-action: none; height: 100dvh; width: 100vw; }
         canvas { display: block; position: fixed; top: 0; left: 0; }
-        
-        /* UI Panels */
         .panel { position: absolute; z-index: 100; width: 200px; max-width: 40vw; }
         .left-panel { top: 10px; left: 10px; }
         .right-panel { top: 10px; right: 10px; }
-        
-        .toggle-btn { 
-            background: #044; color: #fff; border: 1px solid #0ff; 
-            padding: 10px; width: 100%; text-align: left; 
-            font-weight: bold; cursor: pointer; border-radius: 4px;
-            font-size: 10px;
-        }
-        
-        .content { 
-            background: rgba(0, 10, 20, 0.9); border: 1px solid #044; 
-            padding: 12px; display: none; flex-direction: column; 
-            gap: 10px; border-radius: 0 0 4px 4px; margin-top: -1px; 
-        }
+        .toggle-btn { background: #044; color: #fff; border: 1px solid #0ff; padding: 10px; width: 100%; text-align: left; font-weight: bold; cursor: pointer; border-radius: 4px; font-size: 10px; }
+        .content { background: rgba(0, 10, 20, 0.9); border: 1px solid #044; padding: 12px; display: none; flex-direction: column; gap: 10px; border-radius: 0 0 4px 4px; margin-top: -1px; }
         .content.open { display: flex; }
-
         .btn-group { display: flex; flex-direction: column; gap: 4px; }
         .row { display: flex; gap: 4px; }
-        button { 
-            background: #001520; border: 1px solid #044; color: #0ff; 
-            padding: 8px; font-size: 10px; text-transform: uppercase; 
-            cursor: pointer; flex: 1; 
-        }
+        button { background: #001520; border: 1px solid #044; color: #0ff; padding: 8px; font-size: 10px; text-transform: uppercase; cursor: pointer; flex: 1; }
         button.active { background: #0ff; color: #000; font-weight: bold; }
-        
         label { font-size: 9px; color: #ccc; text-transform: uppercase; letter-spacing: 1px; }
         input[type=range] { width: 100%; accent-color: #0ff; cursor: pointer; height: 20px; }
     </style>
@@ -84,14 +56,8 @@
 <div class="panel right-panel">
     <button class="toggle-btn" onclick="togglePanel('right-content')">⚙ PHYSICS ☰</button>
     <div id="right-content" class="content open">
-        <div>
-            <label>Sim Speed</label>
-            <input type="range" id="speed-slider" min="0" max="2" step="0.1" value="1">
-        </div>
-        <div>
-            <label>G-Scale</label>
-            <input type="range" id="warp-slider" min="1" max="25" step="0.1" value="5">
-        </div>
+        <div><label>Sim Speed</label><input type="range" id="speed-slider" min="0" max="2" step="0.1" value="1"></div>
+        <div><label>G-Scale</label><input type="range" id="warp-slider" min="1" max="25" step="0.1" value="5"></div>
     </div>
 </div>
 
@@ -192,8 +158,10 @@ canvas.addEventListener('touchend', (e) => {
         const wX = dxS * Math.cos(-cam.rotZ) - dyS * Math.sin(-cam.rotZ);
         const wY = dxS * Math.sin(-cam.rotZ) + dyS * Math.cos(-cam.rotZ);
         let vx = 0, vy = 0;
-        if (currentMode === 'directional') { vx = (startX - curX) * 0.1; vy = (startY - curY) * 0.1; }
-        else if (currentMode === 'orbital') {
+        if (currentMode === 'directional') { 
+            // INCREASED VELOCITY MULTIPLIER (0.25)
+            vx = (startX - curX) * 0.25; vy = (startY - curY) * 0.25; 
+        } else if (currentMode === 'orbital') {
             const nearest = objects.find(o => o.isStatic);
             if (nearest) {
                 const dx = wX - nearest.x, dy = wY - nearest.y, r = Math.sqrt(dx*dx + dy*dy);
@@ -206,11 +174,7 @@ canvas.addEventListener('touchend', (e) => {
     isPointerDown = false; isMultiTouch = false;
 });
 
-// FULL SCREEN RE-CENTER LOGIC
-window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-});
+window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
 
 function update() {
     const simSpeed = parseFloat(document.getElementById('speed-slider').value);
@@ -233,11 +197,12 @@ function update() {
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const res = Math.floor(85 * (1 + (gScale-1) * 0.05));
     const bound = CONFIG.gridSize;
     let grid = [];
-    for (let i = -bound; i <= bound; i += 85) {
+    for (let i = -bound; i <= bound; i += res) {
         let row = [];
-        for (let j = -bound; j <= bound; j += 85) { row.push(getVertex(i, j, gScale)); }
+        for (let j = -bound; j <= bound; j += res) { row.push(getVertex(i, j, gScale)); }
         grid.push(row);
     }
 
@@ -268,6 +233,15 @@ function update() {
         ctx.save(); ctx.setLineDash([5, 5]);
         ctx.strokeStyle = CONFIG[currentType].color === '#000' ? '#f11' : CONFIG[currentType].color;
         ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(startX, startY, currentSize, 0, Math.PI * 2); ctx.stroke();
+        
+        // RESTORED SLINGSHOT ARROW
+        if (currentMode === 'directional') {
+            ctx.setLineDash([]); ctx.strokeStyle = '#0ff'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(startX + (startX - curX), startY + (startY - curY));
+            ctx.stroke();
+        }
         ctx.restore();
     }
     requestAnimationFrame(update);
@@ -276,6 +250,7 @@ function update() {
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 update();
+updateUI();
 </script>
 </body>
 </html>
