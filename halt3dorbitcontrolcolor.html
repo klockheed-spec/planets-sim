@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glowing Cube - Spectrum</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
+  canvas { display: block; }
+  #crt {
+    position: fixed; inset: 0; pointer-events: none; z-index: 10;
+    background:
+      /* scanlines */
+      repeating-linear-gradient(
+        to bottom,
+        rgba(0,0,0,0.0) 0px,
+        rgba(0,0,0,0.0) 2px,
+        rgba(0,0,0,0.18) 2px,
+        rgba(0,0,0,0.18) 4px
+      );
+    mix-blend-mode: multiply;
+  }
+  #crt::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at center,
+      rgba(0,0,0,0) 55%,
+      rgba(0,0,0,0.55) 100%
+    );
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="crt"></div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  if (typeof resizeBloom === 'function') resizeBloom();
+  _hazeCx = -1;
+  beamDirty = true;
+});
+
+const CUBE_SIZE = 90;
+const FOV = 600;
+const FOV_OFFSET = FOV * 0.6; // precomputed
+
+let camYaw = 0, camPitch = 0.30;
+
+// ── Cached trig — recomputed once per frame ──────────────────────────────────
+let cpCos, cpSin, cyCos, cySin;
+// Pulse: slow breathing effect on bloom/glow intensity
+let pulse = 1.0;
+function updateCamTrig() {
+  cpCos = Math.cos(camPitch); cpSin = Math.sin(camPitch);
+  cyCos = Math.cos(camYaw);   cySin = Math.sin(camYaw);
+}
+
+// ── Inline projection — no object allocation, returns flat array [sx,sy,scale,vz] ─
+// Rotates local point (lx,ly,lz) by camPitch then camYaw, then perspective projects.
+// Results written into out array at offset i: out[i]=sx, out[i+1]=sy, out[i+2]=scale, out[i+3]=vz
+const _projOut = new Float32Array(8 * 4); // up to 8 verts at once
+
+function projectBatch(locals, cx, cy, out) {
+  // locals = array of {x,y,z}
+  for (let i = 0; i < locals.length; i++) {
+    const lx = locals[i].x, ly = locals[i].y, lz = locals[i].z;
+    // rotateX by camPitch
+    const rx = lx;
+    const ry = ly * cpCos - lz * cpSin;
+    const rz = ly * cpSin + lz * cpCos;
+    // rotateY by camYaw
+    const wx =  rx * cyCos + rz * cySin;
+    const wy =  ry;
+    const wz = -rx * cySin + rz * cyCos;
+    const scale = FOV / (FOV + wz + FOV_OFFSET) * zoom;
+    const o = i * 4;
+    out[o]   = cx + wx * scale;
+    out[o+1] = cy + wy * scale;
+    out[o+2] = scale;
+    out[o+3] = wz;
+  }
+}
+
+// Project a single local point, returns {x,y,scale,z}
+function projectOne(lx, ly, lz, cx, cy) {
+  const rx = lx;
+  const ry = ly * cpCos - lz * cpSin;
+  const rz = ly * cpSin + lz * cpCos;
+  const wx =  rx * cyCos + rz * cySin;
+  const wy =  ry;
+  const wz = -rx * cySin + rz * cyCos;
+  const scale = FOV / (FOV + wz + FOV_OFFSET) * zoom;
+  return { x: cx + wx * scale, y: cy + wy * scale, scale, z: wz };
+}
+
+// ── Cube geometry ─────────────────────────────────────────────────────────────
+const BASE_CORNERS = [
+  [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+  [-1,-1, 1],[1,-1, 1],[1,1, 1],[-1,1, 1]
+].map(([x,y,z]) => ({ x: x*CUBE_SIZE, y: y*CUBE_SIZE, z: z*CUBE_SIZE }));
+
+const edges = [
+  [0,1],[1,2],[2,3],[3,0],
+  [4,5],[5,6],[6,7],[7,4],
+  [0,4],[1,5],[2,6],[3,7]
+];
+
+// Projected verts cache — computed once per frame, shared by beam + cube
+const projVerts = new Float32Array(8 * 4); // [sx,sy,scale,vz] * 8
+
+function updateProjVerts(cx, cy) {
+  projectBatch(BASE_CORNERS, cx, cy, projVerts);
+}
+
+// ── Streaks ───────────────────────────────────────────────────────────────────
+const NUM_STREAKS = 75;
+const SPREAD_R = 380, SPREAD_L = 800;
+
+// Spectrum colors — must be defined before initStreak uses SPECTRUM.length
+// Spectrum fade: each streak goes red(head) → orange/yellow(mid) → blue/purple(tail)
+// Index = segment bucket [0=head, 1=mid, 2=tail]
+const SPECTRUM = [
+  'rgba(255,50,20,A)',   // seg 0: red   (head, brightest)
+  'rgba(255,200,20,A)',  // seg 1: yellow (mid)
+  'rgba(80,60,255,A)',   // seg 2: blue/purple (tail, fades out)
+];
+
+// Flat typed arrays for streak data — much faster than objects
+const sLX    = new Float32Array(NUM_STREAKS);
+const sLY    = new Float32Array(NUM_STREAKS);
+const sLZ    = new Float32Array(NUM_STREAKS);
+const sLen   = new Float32Array(NUM_STREAKS);
+const sSpeed = new Float32Array(NUM_STREAKS);
+const sAlpha = new Float32Array(NUM_STREAKS);
+const sWidth = new Float32Array(NUM_STREAKS);
+
+function initStreak(i, fullRange) {
+  const angle  = Math.random() * Math.PI * 2;
+  // Bias toward center: square root of uniform gives linear density, raw uniform biases inward
+  const radius = Math.pow(Math.random(), 1.8) * SPREAD_R;
+  sLX[i]    = Math.cos(angle) * radius;
+  sLY[i]    = Math.sin(angle) * radius;
+  sLZ[i]    = fullRange
+    ? (Math.random() * SPREAD_L * 1.5) - SPREAD_L
+    : SPREAD_L * 0.6;
+  sLen[i]   = 70  + Math.random() * 180;
+  sSpeed[i] = 5   + Math.random() * 11;
+  sAlpha[i] = 0.15 + Math.random() * 0.7;
+  sWidth[i] = 0.5  + Math.random() * 1.6;
+}
+
+for (let i = 0; i < NUM_STREAKS; i++) initStreak(i, true);
+
+// Streak rendering: no per-streak gradients.
+const SEG_BUCKETS = 3;
+const bucketLines  = [[], [], []];
+
+function drawStreaks(cx, cy) {
+  const W = canvas.width, H = canvas.height;
+
+  // Clear buckets
+  for (let b = 0; b < SEG_BUCKETS; b++) bucketLines[b].length = 0;
+
+  for (let i = 0; i < NUM_STREAKS; i++) {
+    sLZ[i] -= sSpeed[i];
+    if (sLZ[i] < -SPREAD_L) { initStreak(i, false); continue; }
+
+    const lx = sLX[i], ly = sLY[i], lz = sLZ[i];
+    const head = projectOne(lx, ly, lz, cx, cy);
+    if (head.scale <= 0) continue;
+    if (head.x < -300 || head.x > W+300 || head.y < -300 || head.y > H+300) continue;
+
+    const fullLen = sLen[i];
+    const pw = Math.max(0.3, sWidth[i] * head.scale * 2.5);
+    const baseAlpha = sAlpha[i] * Math.min(1, head.scale * 1.4);
+
+    // Split streak into 3 equal segments along Z
+    const step = fullLen / SEG_BUCKETS;
+    let prevX = head.x, prevY = head.y;
+
+    for (let b = 0; b < SEG_BUCKETS; b++) {
+      const segLz = lz - step * (b + 1);
+      const pt = projectOne(lx, ly, segLz, cx, cy);
+      if (pt.scale <= 0) break;
+
+      // alpha for this segment: lerp from bright (b=0) to dim (b=2)
+      const t = b / (SEG_BUCKETS - 1);
+      const segAlpha = baseAlpha * (1 - t * 0.92);
+
+      bucketLines[b].push(prevX, prevY, pt.x, pt.y, pw, segAlpha);
+      prevX = pt.x; prevY = pt.y;
+    }
+  }
+
+  // Draw each bucket as batched lines — one beginPath per unique (lineWidth, alpha) group
+  ctx.save();
+  ctx.lineCap = 'round';
+
+  for (let b = 0; b < SEG_BUCKETS; b++) {
+    const lines = bucketLines[b];
+    const n = lines.length;
+    if (n === 0) continue;
+
+    // All streaks share same spectrum fade — b=0 red, b=1 yellow, b=2 purple
+    for (let j = 0; j < n; j += 6) {
+      const x1 = lines[j], y1 = lines[j+1], x2 = lines[j+2], y2 = lines[j+3];
+      const pw = lines[j+4], alpha = lines[j+5];
+      const aQ = Math.max(0, Math.min(1, alpha)).toFixed(2);
+
+      ctx.beginPath();
+      ctx.lineWidth = Math.max(0.3, pw);
+      ctx.strokeStyle = SPECTRUM[b].replace('A', aQ);
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+// ── Beam — pre-rendered offscreen, only rebuilt when beam direction changes ───
+const beamCanvas = document.createElement('canvas');
+const beamCtx    = beamCanvas.getContext('2d', { alpha: true });
+let beamDirty    = true;
+let lastBeamDir  = -999;
+
+function rebuildBeam(cx, cy) {
+  const w = canvas.width, h = canvas.height;
+  beamCanvas.width = w; beamCanvas.height = h;
+  const farPt   = projectOne(0, 0, -CUBE_SIZE * 5, cx, cy);
+  const beamDir = Math.atan2(farPt.y - cy, farPt.x - cx);
+  lastBeamDir   = beamDir;
+  const conLen  = Math.hypot(w, h) * 1.1;
+  const BDX = Math.cos(beamDir), BDY = Math.sin(beamDir);
+
+  beamCtx.clearRect(0, 0, w, h);
+
+  // Radial bloom layers — drawn once
+  const radLayers = [
+    { r: 500, a: 0.09 },
+    { r: 280, a: 0.15 },
+    { r: 140, a: 0.21 },
+    { r: 70,  a: 0.30 },
+    { r: 28,  a: 0.44 },
+  ];
+  for (const layer of radLayers) {
+    const grd = beamCtx.createRadialGradient(cx, cy, 0, cx, cy, layer.r);
+    grd.addColorStop(0,    `rgba(255,30,10,${layer.a})`);
+    grd.addColorStop(0.25, `rgba(200,15,5,${layer.a * 0.5})`);
+    grd.addColorStop(1,    'rgba(0,0,0,0)');
+    beamCtx.fillStyle = grd;
+    beamCtx.fillRect(0, 0, w, h);
+  }
+
+  // Edge-extruded quads using current projected verts
+  for (let e = 0; e < edges.length; e++) {
+    const [a, b] = edges[e];
+    const o1 = a*4, o2 = b*4;
+    const ax = projVerts[o1], ay = projVerts[o1+1];
+    const bx = projVerts[o2], by = projVerts[o2+1];
+    const fax = ax+BDX*conLen, fay = ay+BDY*conLen;
+    const fbx = bx+BDX*conLen, fby = by+BDY*conLen;
+    const mx = (ax+bx)/2, my = (ay+by)/2;
+
+    const bg = beamCtx.createLinearGradient(mx, my, mx+BDX*conLen, my+BDY*conLen);
+    bg.addColorStop(0,    'rgba(255,40,20,0.50)');
+    bg.addColorStop(0.05, 'rgba(220,20,10,0.34)');
+    bg.addColorStop(0.22, 'rgba(180,10,5,0.15)');
+    bg.addColorStop(0.55, 'rgba(120,5,2,0.05)');
+    bg.addColorStop(1,    'rgba(0,0,0,0)');
+    beamCtx.fillStyle = bg;
+    beamCtx.beginPath();
+    beamCtx.moveTo(ax, ay); beamCtx.lineTo(bx, by);
+    beamCtx.lineTo(fbx, fby); beamCtx.lineTo(fax, fay);
+    beamCtx.closePath();
+    beamCtx.fill();
+  }
+
+  // Soft cone envelope
+  beamCtx.save();
+  beamCtx.translate(cx, cy);
+  beamCtx.rotate(beamDir);
+  const envLayers = [
+    { hw: conLen * Math.tan(0.20), a: 0.04 },
+    { hw: conLen * Math.tan(0.11), a: 0.08 },
+    { hw: conLen * Math.tan(0.05), a: 0.12 },
+  ];
+  for (const bl of envLayers) {
+    const bg = beamCtx.createLinearGradient(0, 0, conLen, 0);
+    bg.addColorStop(0,    `rgba(255,25,8,${bl.a * 1.8})`);
+    bg.addColorStop(0.07, `rgba(220,18,5,${bl.a * 1.2})`);
+    bg.addColorStop(0.3,  `rgba(180,10,3,${bl.a * 0.5})`);
+    bg.addColorStop(1,    'rgba(0,0,0,0)');
+    beamCtx.fillStyle = bg;
+    beamCtx.beginPath();
+    beamCtx.moveTo(0,0);
+    beamCtx.lineTo(conLen, -bl.hw);
+    beamCtx.lineTo(conLen,  bl.hw);
+    beamCtx.closePath();
+    beamCtx.fill();
+  }
+  beamCtx.restore();
+}
+
+// ── Cube ──────────────────────────────────────────────────────────────────────
+function drawCube(cx, cy) {
+  // Halos
+  const halos = [
+    { r: 200, a: 0.035 },
+    { r: 120, a: 0.07  },
+    { r: 65,  a: 0.12  },
+    { r: 30,  a: 0.20  },
+  ];
+  for (const h of halos) {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, h.r);
+    g.addColorStop(0, `rgba(255,20,10,${h.a * pulse})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, h.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  ctx.save();
+  const passes = [
+    { lw: 9,   alpha: 0.10, color: '255,30,10'  },
+    { lw: 3.5, alpha: 0.42, color: '220,15,5'  },
+    { lw: 1.2, alpha: 0.95, color: '255,80,60' },
+  ];
+  for (const p of passes) {
+    ctx.lineWidth = p.lw;
+    for (const [a, b] of edges) {
+      const o1 = a*4, o2 = b*4;
+      const avgZ = (projVerts[o1+3] + projVerts[o2+3]) / 2;
+      const df   = Math.max(0.2, Math.min(1, 1 - avgZ / (CUBE_SIZE * 4)));
+      ctx.strokeStyle = `rgba(${p.color},${Math.min(1, p.alpha * df * pulse)})`;
+      ctx.beginPath();
+      ctx.moveTo(projVerts[o1], projVerts[o1+1]);
+      ctx.lineTo(projVerts[o2], projVerts[o2+1]);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// ── Bloom ─────────────────────────────────────────────────────────────────────
+const bloomCanvas = document.createElement('canvas');
+const bloomCtx    = bloomCanvas.getContext('2d', { alpha: true });
+
+function resizeBloom() {
+  bloomCanvas.width  = Math.max(1, Math.floor(canvas.width  / 6));
+  bloomCanvas.height = Math.max(1, Math.floor(canvas.height / 6));
+}
+resizeBloom();
+
+let _hazeGrad = null, _hazeCx = -1, _hazeCy = -1;
+function hazeGrad(cx, cy) {
+  if (_hazeCx !== cx || _hazeCy !== cy) {
+    _hazeGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 500);
+    _hazeGrad.addColorStop(0,   'rgba(255,20,5,0.10)');
+    _hazeGrad.addColorStop(0.4, 'rgba(180,10,2,0.04)');
+    _hazeGrad.addColorStop(1,   'rgba(0,0,0,0)');
+    _hazeCx = cx; _hazeCy = cy;
+  }
+  return _hazeGrad;
+}
+
+function drawBloom(cx, cy) {
+  const bw = bloomCanvas.width, bh = bloomCanvas.height;
+  bloomCtx.clearRect(0, 0, bw, bh);
+  bloomCtx.drawImage(canvas, 0, 0, bw, bh);
+  bloomCtx.filter = 'blur(12px)';
+  bloomCtx.globalCompositeOperation = 'screen';
+  bloomCtx.globalAlpha = 0.65;
+  bloomCtx.drawImage(bloomCanvas, 0, 0);
+  bloomCtx.filter = 'none';
+  bloomCtx.globalAlpha = 1;
+  bloomCtx.globalCompositeOperation = 'source-over';
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.globalAlpha = 0.75;
+  ctx.drawImage(bloomCanvas, 0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = hazeGrad(cx, cy);
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+
+// ── Mouse controls ───────────────────────────────────────────────────────────
+let autoYaw = 0, autoPitch = 0.30;   // auto-orbit base values
+let dragYaw = 0, dragPitch = 0;      // accumulated drag offset
+let isDragging = false;
+let lastMX = 0, lastMY = 0;
+// Velocity for momentum
+let velYaw = 0, velPitch = 0;
+const DRAG_SENS = 0.005;
+const MOMENTUM  = 0.88;
+
+canvas.style.cursor = 'grab';
+
+canvas.addEventListener('mousedown', e => {
+  isDragging = true;
+  lastMX = e.clientX;
+  lastMY = e.clientY;
+  velYaw = velPitch = 0;
+  canvas.style.cursor = 'grabbing';
+});
+
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const dx = e.clientX - lastMX;
+  const dy = e.clientY - lastMY;
+  lastMX = e.clientX;
+  lastMY = e.clientY;
+  velYaw   = dx * DRAG_SENS;
+  velPitch = dy * DRAG_SENS;
+  dragYaw   += velYaw;
+  dragPitch += velPitch;
+  // Clamp pitch so it doesn't flip
+  dragPitch = Math.max(-1.2, Math.min(1.2, dragPitch));
+  beamDirty = true;
+});
+
+window.addEventListener('mouseup', () => {
+  isDragging = false;
+  canvas.style.cursor = 'grab';
+});
+
+// Scroll to zoom
+let zoom = 1.0;
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom *= 1 - e.deltaY * 0.001;
+  zoom = Math.max(0.2, Math.min(4.0, zoom));
+  beamDirty = true;
+}, { passive: false });
+
+// Touch support
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  isDragging = true;
+  lastMX = t.clientX; lastMY = t.clientY;
+  velYaw = velPitch = 0;
+}, { passive: false });
+
+window.addEventListener('touchmove', e => {
+  if (!isDragging) return;
+  e.preventDefault();
+  const touch = e.touches[0];
+  const dx = touch.clientX - lastMX;
+  const dy = touch.clientY - lastMY;
+  lastMX = touch.clientX; lastMY = touch.clientY;
+  velYaw   = dx * DRAG_SENS;
+  velPitch = dy * DRAG_SENS;
+  dragYaw   += velYaw;
+  dragPitch += velPitch;
+  dragPitch  = Math.max(-1.2, Math.min(1.2, dragPitch));
+  beamDirty  = true;
+}, { passive: false });
+
+window.addEventListener('touchend', () => { isDragging = false; });
+
+
+// ── Circuit landscape ─────────────────────────────────────────────────────────
+// A grid of circuit traces on the Y = GROUND_Y plane below the cube,
+// built once and projected each frame. Traces are L-shaped (Manhattan routing)
+// like real PCB traces. Fade with distance (Z depth).
+
+const GROUND_Y   = 600;   // local Y below cube (cube is at 0, positive Y = down)
+const GRID_SIZE  = 120;   // spacing between grid nodes
+const GRID_W     = 18;    // nodes wide
+const GRID_H     = 18;    // nodes deep (Z axis)
+const GRID_OX    = -(GRID_W / 2) * GRID_SIZE;  // center grid on X
+const GRID_OZ    = -(GRID_H / 2) * GRID_SIZE;  // center grid on Z
+
+// Generate circuit trace segments: each is {ax,ay,az,bx,by,bz}
+// All on the ground plane (y = GROUND_Y)
+// Use Manhattan routing: horizontal then vertical segments
+const circuitSegs = [];
+
+// Helper: add an L-shaped route from (x1,z1) to (x2,z2) via corner (x2,z1)
+function addTrace(x1, z1, x2, z2) {
+  const y = GROUND_Y;
+  // Horizontal leg
+  if (x1 !== x2) circuitSegs.push({ ax: x1, ay: y, az: z1, bx: x2, by: y, bz: z1 });
+  // Vertical leg
+  if (z1 !== z2) circuitSegs.push({ ax: x2, ay: y, az: z1, bx: x2, by: y, bz: z2 });
+}
+
+// Build a sparse random circuit layout
+const rng = (n => () => { n = (n * 1664525 + 1013904223) & 0xffffffff; return (n >>> 0) / 0xffffffff; })(42);
+
+// Horizontal trunk lines across the grid
+for (let row = 0; row < GRID_H; row += 2) {
+  const z = GRID_OZ + row * GRID_SIZE;
+  let x = GRID_OX;
+  while (x < GRID_OX + GRID_W * GRID_SIZE) {
+    const segLen = GRID_SIZE * (1 + Math.floor(rng() * 4));
+    const x2 = Math.min(x + segLen, GRID_OX + (GRID_W - 1) * GRID_SIZE);
+    circuitSegs.push({ ax: x, ay: GROUND_Y, az: z, bx: x2, by: GROUND_Y, bz: z });
+    x = x2 + GRID_SIZE * (rng() < 0.3 ? 1 : 0); // occasional gap
+  }
+}
+
+// Vertical trunk lines
+for (let col = 0; col < GRID_W; col += 2) {
+  const x = GRID_OX + col * GRID_SIZE;
+  let z = GRID_OZ;
+  while (z < GRID_OZ + GRID_H * GRID_SIZE) {
+    const segLen = GRID_SIZE * (1 + Math.floor(rng() * 3));
+    const z2 = Math.min(z + segLen, GRID_OZ + (GRID_H - 1) * GRID_SIZE);
+    circuitSegs.push({ ax: x, ay: GROUND_Y, az: z, bx: x, by: GROUND_Y, bz: z2 });
+    z = z2 + GRID_SIZE * (rng() < 0.4 ? 1 : 0);
+  }
+}
+
+// Random L-shaped branch traces connecting grid nodes
+for (let i = 0; i < 60; i++) {
+  const col1 = Math.floor(rng() * GRID_W);
+  const row1 = Math.floor(rng() * GRID_H);
+  const col2 = col1 + Math.floor(rng() * 5) - 2;
+  const row2 = row1 + Math.floor(rng() * 5) - 2;
+  if (col2 < 0 || col2 >= GRID_W || row2 < 0 || row2 >= GRID_H) continue;
+  const x1 = GRID_OX + col1 * GRID_SIZE;
+  const z1 = GRID_OZ + row1 * GRID_SIZE;
+  const x2 = GRID_OX + col2 * GRID_SIZE;
+  const z2 = GRID_OZ + row2 * GRID_SIZE;
+  addTrace(x1, z1, x2, z2);
+}
+
+// Tiny via dots with flash state
+const viaDots = [];
+for (let i = 0; i < 40; i++) {
+  const col = Math.floor(rng() * GRID_W);
+  const row = Math.floor(rng() * GRID_H);
+  viaDots.push({
+    x: GRID_OX + col * GRID_SIZE,
+    z: GRID_OZ + row * GRID_SIZE,
+    flashPhase: rng() * Math.PI * 2,   // random start phase
+    flashSpeed: 0.02 + rng() * 0.06,   // each node blinks at its own rate
+    flashOn: rng() < 0.5,              // some start on, some off
+  });
+}
+
+// Max Z distance for fade calculation
+const MAX_GRID_DIST = GRID_SIZE * Math.max(GRID_W, GRID_H) * 0.7;
+
+function drawCircuit(cx, cy) {
+  ctx.save();
+  ctx.lineCap = 'square';
+
+  for (const seg of circuitSegs) {
+    const pa = projectOne(seg.ax, seg.ay, seg.az, cx, cy);
+    const pb = projectOne(seg.bx, seg.by, seg.bz, cx, cy);
+    if (pa.scale <= 0 || pb.scale <= 0) continue;
+
+    const avgWz  = (pa.z + pb.z) / 2;
+    const fadeDist = 1100;
+    const fade = Math.max(0, Math.min(1, 1 - avgWz / fadeDist));
+    if (fade <= 0.01) continue;
+
+    const avgScale = (pa.scale + pb.scale) / 2;
+
+    // Glow pass
+    ctx.lineWidth   = Math.max(0.5, 3.5 * avgScale);
+    ctx.strokeStyle = `rgba(255,30,10,${0.08 * fade})`;
+    ctx.beginPath();
+    ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y);
+    ctx.stroke();
+
+    // Sharp core
+    ctx.lineWidth   = Math.max(0.3, 1.0 * avgScale);
+    ctx.strokeStyle = `rgba(255,80,55,${0.55 * fade})`;
+    ctx.beginPath();
+    ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y);
+    ctx.stroke();
+  }
+
+  // Depth fog: dark radial vignette over the ground plane — frames the scene
+  const fogGrd = ctx.createRadialGradient(cx, cy, 80, cx, cy, Math.hypot(canvas.width, canvas.height) * 0.65);
+  fogGrd.addColorStop(0,   'rgba(0,0,0,0)');
+  fogGrd.addColorStop(0.55,'rgba(0,0,0,0.18)');
+  fogGrd.addColorStop(1,   'rgba(0,0,0,0.82)');
+  ctx.fillStyle = fogGrd;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Flashing via dots
+  for (const v of viaDots) {
+    v.flashPhase += v.flashSpeed;
+    // Square-wave-ish flash: mostly off, quick bright pulse
+    const flashVal = Math.pow(Math.max(0, Math.sin(v.flashPhase)), 6);
+    if (flashVal < 0.02) continue;
+
+    const p = projectOne(v.x, GROUND_Y, v.z, cx, cy);
+    if (p.scale <= 0) continue;
+    const fade = Math.max(0, Math.min(1, 1 - p.z / 1100));
+    if (fade <= 0.02) continue;
+
+    const brightness = flashVal * fade;
+    const r = Math.max(0.8, 3.5 * p.scale);
+
+    // Bright core
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,180,120,${brightness * 0.95})`;
+    ctx.fill();
+
+    // Glow ring
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r * 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,60,20,${brightness * 0.22})`;
+    ctx.fill();
+
+    // Wide outer pulse
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r * 7, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,20,5,${brightness * 0.06})`;
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ── Frame loop ────────────────────────────────────────────────────────────────
+let t = 0;
+const BEAM_REBUILD_INTERVAL = 3;
+let frameCount = 0;
+
+function frame() {
+  t += 0.004;
+  // Pulse: two overlapping sine waves for organic breathing feel
+  pulse = 0.82 + 0.12 * Math.sin(t * 1.1) + 0.06 * Math.sin(t * 2.7);
+
+  // Apply momentum when not dragging
+  if (!isDragging) {
+    if (Math.abs(velYaw) > 0.0001 || Math.abs(velPitch) > 0.0001) {
+      dragYaw   += velYaw;
+      dragPitch += velPitch;
+      dragPitch  = Math.max(-1.2, Math.min(1.2, dragPitch));
+      velYaw    *= MOMENTUM;
+      velPitch  *= MOMENTUM;
+      beamDirty  = true;
+    }
+  }
+
+  // Auto-orbit + drag offset
+  autoYaw   = t;
+  autoPitch = 0.30 + Math.sin(t * 0.4) * 0.15;
+  camYaw    = autoYaw   + dragYaw;
+  camPitch  = autoPitch + dragPitch;
+  camPitch  = Math.max(-1.4, Math.min(1.4, camPitch));
+
+  updateCamTrig(); // cache sin/cos once
+
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+
+  updateProjVerts(cx, cy); // project verts once, reused by beam + cube
+
+  // Rebuild beam offscreen canvas every few frames (slow-changing)
+  if (frameCount % BEAM_REBUILD_INTERVAL === 0 || beamDirty) {
+    rebuildBeam(cx, cy);
+    beamDirty = false;
+  }
+  frameCount++;
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.drawImage(beamCanvas, 0, 0); // blit pre-rendered beam
+  drawCircuit(cx, cy);
+  drawStreaks(cx, cy);
+  drawCube(cx, cy);
+  drawBloom(cx, cy);
+
+  requestAnimationFrame(frame);
+}
+
+frame();
+</script>
+</body>
+</html>
