@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Rust Vector City - Stabilized</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0d0400; }
+        canvas { display: block; }
+        #crt {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(183, 65, 14, 0) 50%, rgba(0, 0, 0, 0.4) 50%);
+            background-size: 100% 4px; pointer-events: none; z-index: 10;
+        }
+        #ui {
+            position: absolute; bottom: 20px; left: 20px; color: #ff4500;
+            font-family: monospace; z-index: 20; letter-spacing: 2px;
+            text-shadow: 0 0 5px #ff4500; cursor: pointer; background: rgba(0,0,0,0.6); 
+            padding: 10px; border: 1px solid #ff4500;
+        }
+    </style>
+</head>
+<body>
+    <div id="crt"></div>
+    <div id="ui" onclick="toggleMusic()">[ SYSTEM STABLE: ENABLE AUDIO ]</div>
+
+    <audio id="bgm" loop>
+        <source src="Neon_Skyline_Glide.mp3" type="audio/mpeg">
+    </audio>
+
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+        import { EffectComposer } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+
+        const RUST_BRIGHT = 0xff4500;
+        const RUST_DARK = 0x8b3103;
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0300);
+        scene.fog = new THREE.Fog(0x0a0300, 100, 1500);
+
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 1, 4000);
+        camera.position.set(0, 50, 400);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        document.body.appendChild(renderer.domElement);
+
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.1);
+        composer.addPass(bloomPass);
+
+        // --- SUN (Clipped) ---
+        const sunShaderMat = new THREE.ShaderMaterial({
+            uniforms: { color: { value: new THREE.Color(RUST_DARK) }, horizonY: { value: 0.0 } },
+            vertexShader: `varying vec3 vWorldPosition; void main() { vec4 worldPosition = modelMatrix * vec4(position, 1.0); vWorldPosition = worldPosition.xyz; gl_Position = projectionMatrix * viewMatrix * worldPosition; }`,
+            fragmentShader: `varying vec3 vWorldPosition; uniform vec3 color; uniform float horizonY; void main() { if (vWorldPosition.y < horizonY) discard; gl_FragColor = vec4(color, 2.5); }`,
+            transparent: true, fog: false
+        });
+        const sun = new THREE.Mesh(new THREE.CircleGeometry(450, 64), sunShaderMat);
+        sun.position.set(0, 0, -1500); 
+        scene.add(sun);
+
+        // --- GRID ---
+        const grid = new THREE.GridHelper(3000, 60, RUST_DARK, 0x1a0800);
+        grid.position.y = -2;
+        scene.add(grid);
+
+        // --- ASSETS ---
+        const cityGroup = new THREE.Group(); scene.add(cityGroup);
+        const trafficGroup = new THREE.Group(); scene.add(trafficGroup);
+
+        const canyonWidth = 40;
+        const spawnZ = -2000;
+        const despawnZ = 500;
+
+        function createVectorBox(w, h, d, color) {
+            const geom = new THREE.BoxGeometry(w, h, d);
+            const mesh = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ color: 0x000000 }));
+            const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geom), new THREE.LineBasicMaterial({ color: color }));
+            mesh.add(edges);
+            return mesh;
+        }
+
+        for (let i = 0; i < 180; i++) {
+            const b = createVectorBox(Math.random()*30+10, Math.random()*150+30, Math.random()*30+10, RUST_BRIGHT);
+            let x = (Math.random() - 0.5) * 1200;
+            if (Math.abs(x) < canyonWidth) x += x > 0 ? canyonWidth : -canyonWidth;
+            b.position.set(x, b.geometry.parameters.height/2 - 2, Math.random() * -2000);
+            cityGroup.add(b);
+        }
+
+        for (let i = 0; i < 40; i++) {
+            const isHeli = Math.random() > 0.8;
+            const v = isHeli ? createVectorBox(12, 6, 22, RUST_BRIGHT) : createVectorBox(8, 4, 12, RUST_BRIGHT);
+            v.userData = { speed: Math.random() * 10 + 5, isHeli: isHeli, offset: Math.random() * 10 };
+            let x = (Math.random() - 0.5) * 1000;
+            if (Math.abs(x) < 30) x += x > 0 ? 30 : -30; 
+            v.position.set(x, isHeli ? 130 + Math.random()*40 : 2, Math.random() * -2000);
+            trafficGroup.add(v);
+        }
+
+        // --- ANIMATION ---
+        const worldSpeed = 10;
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = Date.now() * 0.001;
+
+            cityGroup.children.forEach(b => {
+                b.position.z += worldSpeed;
+                if (b.position.z > despawnZ) b.position.z = spawnZ;
+            });
+            grid.position.z += worldSpeed;
+            if (grid.position.z > 50) grid.position.z = 0;
+
+            trafficGroup.children.forEach(v => {
+                v.position.z += worldSpeed + v.userData.speed;
+                if (v.userData.isHeli) v.position.y += Math.sin(time * 2 + v.userData.offset) * 0.4;
+                if (v.position.z > despawnZ) {
+                    v.position.z = spawnZ;
+                    let newX = (Math.random() - 0.5) * 1000;
+                    if (Math.abs(newX) < 30) newX += newX > 0 ? 30 : -30;
+                    v.position.x = newX;
+                }
+            });
+
+            // Smooth camera bobbing
+            camera.position.y = 50 + Math.sin(time * 2.5) * 0.4;
+
+            // VERY rare micro-glitch (Subtle camera shake)
+            if (Math.random() > 0.998) {
+                camera.position.x += (Math.random() - 0.5) * 2;
+                camera.rotation.z = (Math.random() - 0.5) * 0.02;
+            } else {
+                camera.rotation.z *= 0.9; // Return to level
+                camera.position.x *= 0.9;
+            }
+
+            composer.render();
+        }
+
+        window.toggleMusic = () => {
+            const audio = document.getElementById('bgm');
+            const ui = document.getElementById('ui');
+            if (audio.paused) {
+                audio.play();
+                ui.innerHTML = "[ LINK ESTABLISHED ]";
+            } else {
+                audio.pause();
+                ui.innerHTML = "[ LINK DISCONNECTED ]";
+            }
+        };
+
+        animate();
+    </script>
+</body>
+</html>
