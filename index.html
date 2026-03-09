@@ -13,6 +13,7 @@
             --neon-amber: #ffaa00;
             --neon-purple: #d000ff;
             --neon-orange: #ff6600;
+            --neon-rust: #ff4500; /* Added for Synth Flight */
             --bg-black: #050505;
         }
 
@@ -29,6 +30,7 @@
             text-transform: uppercase;
         }
 
+        /* CRT Overlay Effect */
         body::before {
             content: " ";
             display: block;
@@ -114,6 +116,7 @@
         .card h3 { margin: 10px 0; }
         .card p  { font-size: 1.1rem; line-height: 1.2; }
 
+        /* Specific Card Theme Classes */
         .card.war { border-color: var(--neon-red); color: var(--neon-red); }
         .card.war:hover { background: var(--neon-red); box-shadow: 0 0 30px var(--neon-red); color: black; }
 
@@ -125,6 +128,9 @@
 
         .card.data-cube { border-color: var(--neon-orange); color: var(--neon-orange); }
         .card.data-cube:hover { background: var(--neon-orange); box-shadow: 0 0 30px var(--neon-orange); color: black; }
+
+        .card.synth-flight { border-color: var(--neon-rust); color: var(--neon-rust); }
+        .card.synth-flight:hover { background: var(--neon-rust); box-shadow: 0 0 30px var(--neon-rust); color: black; }
 
         .glitch { animation: glitch 1s linear infinite; }
 
@@ -198,6 +204,13 @@
                 <h3>DATA_CUBE_SIMULATION</h3>
                 <p>Hyperdimensional matrix render. Spectral orbit visualization.</p>
                 <p>> INITIALIZE CUBE_</p>
+            </a>
+
+            <a href="rust-city2.html" class="card synth-flight">
+                <h2>[ 07 ]</h2>
+                <h3 class="glitch">SYNTHWAVE_FLIGHT</h3>
+                <p>Atmospheric vector canyon traversal. Chromatic signal lock. 100% Rust-Red saturation.</p>
+                <p>> INITIATE_NEURAL_LINK</p>
             </a>
         </section>
 
