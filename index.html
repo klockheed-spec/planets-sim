@@ -12,6 +12,7 @@
             --neon-red: #ff003c;
             --neon-amber: #ffaa00;
             --neon-purple: #d000ff;
+            --neon-orange: #ff6600;
             --bg-black: #050505;
         }
 
@@ -28,7 +29,6 @@
             text-transform: uppercase;
         }
 
-        /* CRT Scanline Effect */
         body::before {
             content: " ";
             display: block;
@@ -70,7 +70,10 @@
             font-size: 3rem;
             margin: 0;
             letter-spacing: 5px;
-            text-shadow: 0 0 10px var(--neon-green);
+            text-shadow: 0 0 6px var(--neon-green),
+                         0 0 20px var(--neon-green),
+                         0 0 50px var(--neon-green),
+                         0 0 100px rgba(0,255,65,0.4);
         }
 
         .status-bar {
@@ -79,6 +82,7 @@
             font-size: 1.2rem;
             margin-bottom: 40px;
             color: var(--neon-blue);
+            text-shadow: 0 0 6px var(--neon-blue), 0 0 18px var(--neon-blue), 0 0 40px rgba(0,242,255,0.35);
         }
 
         .grid {
@@ -95,6 +99,7 @@
             color: inherit;
             position: relative;
             background: rgba(0, 255, 65, 0.05);
+            text-shadow: 0 0 6px currentColor, 0 0 18px currentColor, 0 0 35px currentColor;
         }
 
         .card:hover {
@@ -102,31 +107,24 @@
             color: black;
             box-shadow: 0 0 30px var(--neon-green);
             transform: scale(1.02);
+            text-shadow: none;
         }
 
-        .card h2 {
-            margin-top: 0;
-            font-size: 1.8rem;
-        }
+        .card h2 { margin-top: 0; font-size: 1.8rem; }
+        .card h3 { margin: 10px 0; }
+        .card p  { font-size: 1.1rem; line-height: 1.2; }
 
-        .card h3 {
-            margin: 10px 0;
-        }
-
-        .card p {
-            font-size: 1.1rem;
-            line-height: 1.2;
-        }
-
-        /* Color Modifiers */
         .card.war { border-color: var(--neon-red); color: var(--neon-red); }
-        .card.war:hover { background: var(--neon-red); box-shadow: 0 0 30px var(--neon-red); }
+        .card.war:hover { background: var(--neon-red); box-shadow: 0 0 30px var(--neon-red); color: black; }
 
         .card.gravity-desktop { border-color: var(--neon-amber); color: var(--neon-amber); }
-        .card.gravity-desktop:hover { background: var(--neon-amber); box-shadow: 0 0 30px var(--neon-amber); }
+        .card.gravity-desktop:hover { background: var(--neon-amber); box-shadow: 0 0 30px var(--neon-amber); color: black; }
 
         .card.gravity-mobile { border-color: var(--neon-purple); color: var(--neon-purple); }
-        .card.gravity-mobile:hover { background: var(--neon-purple); box-shadow: 0 0 30px var(--neon-purple); }
+        .card.gravity-mobile:hover { background: var(--neon-purple); box-shadow: 0 0 30px var(--neon-purple); color: black; }
+
+        .card.data-cube { border-color: var(--neon-orange); color: var(--neon-orange); }
+        .card.data-cube:hover { background: var(--neon-orange); box-shadow: 0 0 30px var(--neon-orange); color: black; }
 
         .glitch { animation: glitch 1s linear infinite; }
 
@@ -140,6 +138,7 @@
             margin-top: 50px;
             font-size: 1rem;
             opacity: 0.7;
+            text-shadow: 0 0 6px var(--neon-green), 0 0 16px var(--neon-green);
         }
 
         .blink { animation: blink 1s step-end infinite; }
@@ -192,6 +191,13 @@
                 <h3 class="glitch">GLOBAL_THERMONUCLEAR_WAR</h3>
                 <p>Strategic simulation. NORAD Protocol 2-B. A strange game.</p>
                 <p>> START GAME_</p>
+            </a>
+
+            <a href="https://klockheed-spec.github.io/planets-sim/halt3dorbitcontrolcolor.html" class="card data-cube">
+                <h2>[ 06 ]</h2>
+                <h3>DATA_CUBE_SIMULATION</h3>
+                <p>Hyperdimensional matrix render. Spectral orbit visualization.</p>
+                <p>> INITIALIZE CUBE_</p>
             </a>
         </section>
 
