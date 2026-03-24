@@ -13,7 +13,8 @@
             --neon-amber: #ffaa00;
             --neon-purple: #d000ff;
             --neon-orange: #ff6600;
-            --neon-rust: #ff4500; /* Added for Synth Flight */
+            --neon-rust: #ff4500;
+            --neon-cyan: #00ffcc; /* Added for Meteor Shower */
             --bg-black: #050505;
         }
 
@@ -132,6 +133,9 @@
         .card.synth-flight { border-color: var(--neon-rust); color: var(--neon-rust); }
         .card.synth-flight:hover { background: var(--neon-rust); box-shadow: 0 0 30px var(--neon-rust); color: black; }
 
+        .card.meteor-shower { border-color: var(--neon-cyan); color: var(--neon-cyan); }
+        .card.meteor-shower:hover { background: var(--neon-cyan); box-shadow: 0 0 30px var(--neon-cyan); color: black; }
+
         .glitch { animation: glitch 1s linear infinite; }
 
         @keyframes glitch {
@@ -211,6 +215,13 @@
                 <h3 class="glitch">SYNTHWAVE_FLIGHT</h3>
                 <p>Atmospheric vector canyon traversal. Chromatic signal lock. 100% Rust-Red saturation.</p>
                 <p>> INITIATE_NEURAL_LINK</p>
+            </a>
+
+            <a href="https://klockheed-spec.github.io/planets-sim/meteor.html" class="card meteor-shower">
+                <h2>[ 08 ]</h2>
+                <h3>METEOR_SHOWER_SIM</h3>
+                <p>Planetary node intersection logic. Debris filament tracking. Precision coordinate lock.</p>
+                <p>> INITIATE_TRACKING</p>
             </a>
         </section>
 
