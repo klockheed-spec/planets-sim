@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Intersection - Detailed Dynamics</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #ui {
+            position: absolute; top: 20px; left: 20px; color: white;
+            background: rgba(0, 0, 0, 0.9); padding: 20px; border-radius: 10px;
+            border: 1px solid #444; width: 250px; z-index: 100;
+        }
+        button { 
+            cursor: pointer; padding: 10px; background: #3498db; color: white; 
+            border: none; border-radius: 5px; font-weight: bold; width: 100%; margin-top: 10px;
+        }
+        button:hover { background: #2980b9; }
+
+        /* Pertinent Facts Box */
+        #facts-box {
+            position: absolute; bottom: 20px; left: 20px; color: #ddd;
+            background: rgba(0, 0, 0, 0.85); padding: 15px; border-radius: 8px;
+            border: 1px solid #555; width: 300px; font-size: 13px; line-height: 1.4;
+            z-index: 100; pointer-events: none;
+        }
+        #facts-box h4 { margin: 0 0 8px 0; color: #f1c40f; text-transform: uppercase; letter-spacing: 1px; }
+
+        #daily-fact {
+            position: absolute; bottom: 30px; width: 100%; text-align: center;
+            color: #f1c40f; font-size: 1.2em; font-weight: bold; display: none;
+        }
+        .label {
+            position: absolute; color: white; background: rgba(0,0,0,0.7);
+            padding: 2px 8px; border-radius: 4px; font-size: 11px; pointer-events: none;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <h3 style="margin:0">Arm Intersection Sim</h3>
+    <button id="toggleDist">Toggle Daily Movement</button>
+    <button id="resetBtn" style="background:#555">Reset Orbit</button>
+</div>
+
+<div id="facts-box">
+    <h4>Orbital Dynamics</h4>
+    • <b>Relative Positioning:</b> The positions of the parent comet and Earth shift annually, meaning Earth rarely hits the exact same path twice.<br><br>
+    • <b>Stream Filaments:</b> This variation, combined with gravitational nudges from planets, creates multiple distinct "tubes" or streams of meteoroids over time.<br><br>
+    • <b>The "Whip" Effect:</b> Per Kepler’s 2nd Law, the comet accelerates drastically at periapsis (40 units) and slows down in deep space.
+</div>
+
+<div id="daily-fact">The Earth moves 2.57 million kilometers through space every day.</div>
+
+<div id="l-sun" class="label">SUN</div>
+<div id="l-earth" class="label">EARTH</div>
+<div id="l-ghost" class="label" style="display:none; color:#f1c40f;">DAILY MOVEMENT</div>
+<div id="l-stream" class="label">METEOR STREAM</div>
+<div id="l-comet" class="label">PARENT COMET</div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    camera.position.set(220, 180, 220);
+
+    scene.add(new THREE.PointLight(0xffffff, 50, 2000));
+    scene.add(new THREE.AmbientLight(0x444444));
+
+    // --- SUN ---
+    const sun = new THREE.Mesh(new THREE.SphereGeometry(7, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffdd44 }));
+    scene.add(sun);
+
+    // --- EARTH ---
+    const eRad = 90;
+    const earth = new THREE.Mesh(new THREE.SphereGeometry(3.5, 32, 32), new THREE.MeshPhongMaterial({ color: 0x2288ff, emissive: 0x112244 }));
+    scene.add(earth);
+
+    const ghost = new THREE.Mesh(new THREE.SphereGeometry(3.2, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.3, wireframe: true }));
+    ghost.visible = false;
+    scene.add(ghost);
+
+    const eOrbit = new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints(new THREE.EllipseCurve(0, 0, eRad, eRad).getPoints(128)),
+        new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 })
+    );
+    eOrbit.rotation.x = Math.PI / 2;
+    scene.add(eOrbit);
+
+    // --- ORBITAL MATH ---
+    const a = 250; 
+    const e = 0.84; 
+    const peri = a * (1 - e); 
+    const semiLatusRectum = a * (1 - e * e); 
+    const inclination = 0.6; 
+    
+    const cosOmega = (semiLatusRectum / 90 - 1) / e;
+    const omega = Math.acos(cosOmega); 
+
+    function getOrbitPoint(phi) {
+        let r = semiLatusRectum / (1 + e * Math.cos(phi));
+        let xLocal = r * Math.cos(phi);
+        let yLocal = r * Math.sin(phi);
+        let xRotated = xLocal * Math.cos(-omega) - yLocal * Math.sin(-omega);
+        let yRotated = xLocal * Math.sin(-omega) + yLocal * Math.cos(-omega);
+        let x = xRotated;
+        let y = yRotated * Math.sin(inclination);
+        let z = yRotated * Math.cos(inclination);
+        return new THREE.Vector3(x, y, z);
+    }
+
+    // --- ROCKY STREAM ---
+    const sCount = 35000;
+    const sPos = new Float32Array(sCount * 3);
+    for(let i = 0; i < sCount; i++) {
+        const p = getOrbitPoint(Math.random() * Math.PI * 2);
+        sPos[i*3] = p.x + (Math.random()-0.5)*7;
+        sPos[i*3+1] = p.y + (Math.random()-0.5)*5;
+        sPos[i*3+2] = p.z + (Math.random()-0.5)*7;
+    }
+    const sGeo = new THREE.BufferGeometry();
+    sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
+    const stream = new THREE.Points(sGeo, new THREE.PointsMaterial({ color: 0xaa8866, size: 0.18, transparent: true, opacity: 0.8 }));
+    scene.add(stream);
+
+    // --- COMET ---
+    const comet = new THREE.Group();
+    comet.add(new THREE.Mesh(new THREE.SphereGeometry(2.8, 12, 12), new THREE.MeshBasicMaterial({ color: 0xffffff })));
+    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 5, 80, 8), new THREE.MeshBasicMaterial({ color: 0xccccff, transparent: true, opacity: 0.3 }));
+    tail.position.y = 40; comet.add(tail);
+    scene.add(comet);
+
+    let time = 0;
+    let cometPhi = 0;
+
+    document.getElementById('toggleDist').onclick = () => {
+        ghost.visible = !ghost.visible;
+        document.getElementById('l-ghost').style.display = ghost.visible ? 'block' : 'none';
+        document.getElementById('daily-fact').style.display = ghost.visible ? 'block' : 'none';
+    };
+    document.getElementById('resetBtn').onclick = () => { time = 0; cometPhi = 0; };
+
+    function animate() {
+        requestAnimationFrame(animate);
+        time += 0.0035;
+
+        earth.position.set(Math.cos(time) * eRad, 0, Math.sin(time) * eRad);
+        ghost.position.set(Math.cos(time - 0.12) * eRad, 0, Math.sin(time - 0.12) * eRad);
+
+        const cp = getOrbitPoint(cometPhi);
+        const dist = cp.length();
+        cometPhi += (40 / (dist + 1)) * 0.015; 
+        comet.position.copy(cp);
+        
+        const tailDir = comet.position.clone().normalize();
+        comet.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tailDir);
+
+        renderer.render(scene, camera);
+
+        const upd = (id, pos, offset = 0) => {
+            const v = pos.clone().project(camera);
+            const el = document.getElementById(id);
+            if (v.z > 1) { el.style.display = 'none'; return; }
+            el.style.display = 'block';
+            el.style.left = `${(v.x * 0.5 + 0.5) * window.innerWidth + offset}px`;
+            el.style.top = `${(v.y * -0.5 + 0.5) * window.innerHeight}px`;
+        };
+
+        upd('l-sun', sun.position);
+        upd('l-earth', earth.position);
+        if(ghost.visible) upd('l-ghost', ghost.position);
+        upd('l-comet', comet.position);
+        upd('l-stream', new THREE.Vector3(90, 0, 0));
+    }
+    animate();
+
+    window.onresize = () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+</script>
+</body>
+</html>
