@@ -1056,11 +1056,12 @@ function render(now) {
   // Debris diagram
   drawDebrisDiagram(simHour);
   
-  // Meteor spawning — REAL TIME, independent of timeSpeed
+  // Meteor spawning — scales with timeSpeed so you see the shower at any speed
   const rate = getMeteorRate(simHour);
   document.getElementById('rate-num').textContent = Math.round(rate)+'/hr';
   
-  meteorAccum += (rate/3600) * dt;
+  // Accumulate at sim-time rate: at 60×, meteors appear 60× faster visually
+  meteorAccum += (rate/3600) * dt * timeSpeed;
   while (meteorAccum >= 1) {
     meteorAccum -= 1;
     const m = new Meteor(lst);
@@ -1073,9 +1074,9 @@ function render(now) {
     if (!m.dead) meteors.push(m);
   }
   
-  // Sporadics ~5/hr
+  // Sporadics ~5/hr, also scaled
   if (skyB < 0.05) {
-    sporadicAccum += (5/3600)*dt;
+    sporadicAccum += (5/3600)*dt*timeSpeed;
     if (sporadicAccum >= 1) {
       sporadicAccum -= 1;
       const m = new Meteor(lst);
