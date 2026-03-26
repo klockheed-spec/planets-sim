@@ -108,37 +108,37 @@
     position: fixed;
     top: 130px;
     right: 20px;
-    width: 240px;
+    width: 280px;
     z-index: 20;
     pointer-events: none;
   }
 
   #debris-diagram {
-    width: 240px;
-    height: 160px;
+    width: 280px;
+    height: 180px;
     margin-bottom: 14px;
-    opacity: 0.7;
+    opacity: 1;
   }
 
   #info-sidebar .desc {
     font-family: 'Cormorant Garamond', serif;
-    font-size: 13px;
-    line-height: 1.7;
-    color: rgba(200, 210, 230, 0.4);
+    font-size: 15px;
+    line-height: 1.75;
+    color: rgba(200, 210, 230, 0.7);
     font-weight: 300;
   }
 
   #info-sidebar .desc strong {
-    color: rgba(200, 180, 150, 0.6);
+    color: rgba(230, 200, 160, 0.9);
     font-weight: 400;
   }
 
   #info-sidebar .phase-label {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 3px;
     text-transform: uppercase;
-    color: rgba(200, 170, 140, 0.5);
+    color: rgba(220, 185, 150, 0.8);
     margin-top: 12px;
     margin-bottom: 6px;
   }
@@ -284,7 +284,7 @@
 <div id="reset-banner"></div>
 
 <div id="info-sidebar">
-  <canvas id="debris-diagram" width="480" height="320"></canvas>
+  <canvas id="debris-diagram" width="560" height="360"></canvas>
   <div class="phase-label" id="phase-label">Entering debris stream</div>
   <div class="desc">
     Each August, Earth passes through the debris trail of <strong>Comet 109P/Swift-Tuttle</strong>.
@@ -840,37 +840,49 @@ function drawDebrisDiagram(simH) {
   const dH = diagCanvas.height;
   dCtx.clearRect(0,0,dW,dH);
   
+  // Subtle border
+  dCtx.strokeStyle = 'rgba(200,180,140,0.15)';
+  dCtx.lineWidth = 0.5;
+  dCtx.strokeRect(1,1,dW-2,dH-2);
+  
   // Earth's progress through the stream: 0 at 20:15, 1 at 2am peak
   const progress = Math.max(0, Math.min(1, (simH - 20.25) / (26 - 20.25)));
   
-  // Comet orbit path (curved arc across diagram)
   const streamCX = dW*0.5;
   const streamCY = dH*0.35;
   const streamW = dW*0.85;
   const streamH = dH*0.15;
   
-  // Draw the debris stream as a band
   dCtx.save();
   
-  // Stream band (elliptical path of debris)
+  // Stream band — much brighter
   const streamGrad = dCtx.createLinearGradient(dW*0.05, 0, dW*0.95, 0);
-  streamGrad.addColorStop(0, 'rgba(180,150,100,0)');
-  streamGrad.addColorStop(0.2, 'rgba(180,150,100,0.08)');
-  streamGrad.addColorStop(0.5, 'rgba(200,170,120,0.15)');
-  streamGrad.addColorStop(0.8, 'rgba(180,150,100,0.08)');
-  streamGrad.addColorStop(1, 'rgba(180,150,100,0)');
+  streamGrad.addColorStop(0, 'rgba(220,180,100,0)');
+  streamGrad.addColorStop(0.15, 'rgba(220,180,100,0.15)');
+  streamGrad.addColorStop(0.5, 'rgba(240,200,130,0.35)');
+  streamGrad.addColorStop(0.85, 'rgba(220,180,100,0.15)');
+  streamGrad.addColorStop(1, 'rgba(220,180,100,0)');
   
   dCtx.fillStyle = streamGrad;
   dCtx.beginPath();
   dCtx.ellipse(streamCX, streamCY, streamW/2, streamH, 0.15, 0, Math.PI*2);
   dCtx.fill();
   
-  // Debris particles drifting along stream
+  // Second pass — brighter core
+  const coreGrad = dCtx.createLinearGradient(dW*0.2, 0, dW*0.8, 0);
+  coreGrad.addColorStop(0, 'rgba(255,220,150,0)');
+  coreGrad.addColorStop(0.5, 'rgba(255,220,150,0.12)');
+  coreGrad.addColorStop(1, 'rgba(255,220,150,0)');
+  dCtx.fillStyle = coreGrad;
+  dCtx.beginPath();
+  dCtx.ellipse(streamCX, streamCY, streamW*0.35, streamH*0.5, 0.15, 0, Math.PI*2);
+  dCtx.fill();
+  
+  // Debris particles — brighter
   const t = Date.now()*0.001;
   for (const p of debrisParticles) {
     const px = (p.x + t*p.speed) % 1;
     const angle = px * Math.PI * 2;
-    // Parametric ellipse
     const dx = Math.cos(angle + 0.15) * streamW/2;
     const dy = Math.sin(angle + 0.15) * streamH + p.y * streamH * 1.5;
     const sx = streamCX + dx;
@@ -878,94 +890,93 @@ function drawDebrisDiagram(simH) {
     
     if (sx < 10 || sx > dW-10 || sy < 5 || sy > dH-30) continue;
     
-    dCtx.fillStyle = `rgba(200,180,130,${p.alpha*0.4})`;
+    dCtx.fillStyle = `rgba(240,210,150,${p.alpha*0.8})`;
     dCtx.beginPath();
     dCtx.arc(sx, sy, p.size, 0, Math.PI*2);
     dCtx.fill();
   }
   
-  // Earth orbit path (gentle arc crossing the stream)
+  // Earth orbit path — brighter dashed line
   const earthPathStartX = dW*0.15;
   const earthPathEndX = dW*0.85;
   const earthPathY = dH*0.75;
-  const earthCrossY = streamCY; // crosses through stream
+  const earthCrossY = streamCY;
   
-  dCtx.strokeStyle = 'rgba(100,140,200,0.2)';
-  dCtx.lineWidth = 1;
-  dCtx.setLineDash([4,4]);
+  dCtx.strokeStyle = 'rgba(120,170,240,0.45)';
+  dCtx.lineWidth = 1.5;
+  dCtx.setLineDash([5,4]);
   dCtx.beginPath();
   dCtx.moveTo(earthPathStartX, earthPathY);
   dCtx.quadraticCurveTo(dW*0.5, earthCrossY - 20, earthPathEndX, earthPathY-30);
   dCtx.stroke();
   dCtx.setLineDash([]);
   
-  // Earth position along path
+  // Earth position
   const earthT = progress;
   const earthX = earthPathStartX + (earthPathEndX - earthPathStartX) * earthT;
   const earthBaseY = earthPathY;
   const earthPeakY = earthCrossY - 20;
-  // Quadratic bezier interpolation
   const earthY = (1-earthT)*(1-earthT)*earthBaseY + 2*(1-earthT)*earthT*earthPeakY + earthT*earthT*(earthPathY-30);
   
-  // Earth
-  const earthR = 8;
+  // Earth — bigger and brighter
+  const earthR = 10;
   const earthGrad = dCtx.createRadialGradient(earthX-2, earthY-2, 0, earthX, earthY, earthR);
-  earthGrad.addColorStop(0, 'rgba(100,160,220,0.9)');
-  earthGrad.addColorStop(0.6, 'rgba(60,120,180,0.7)');
-  earthGrad.addColorStop(1, 'rgba(30,60,100,0.4)');
+  earthGrad.addColorStop(0, 'rgba(130,190,255,1)');
+  earthGrad.addColorStop(0.5, 'rgba(80,140,220,0.9)');
+  earthGrad.addColorStop(1, 'rgba(40,80,160,0.6)');
   dCtx.fillStyle = earthGrad;
   dCtx.beginPath();
   dCtx.arc(earthX, earthY, earthR, 0, Math.PI*2);
   dCtx.fill();
   
-  // Earth glow
-  const eGlow = dCtx.createRadialGradient(earthX, earthY, earthR, earthX, earthY, earthR*3);
-  eGlow.addColorStop(0, 'rgba(100,160,220,0.15)');
-  eGlow.addColorStop(1, 'rgba(100,160,220,0)');
+  // Earth glow — brighter
+  const eGlow = dCtx.createRadialGradient(earthX, earthY, earthR, earthX, earthY, earthR*3.5);
+  eGlow.addColorStop(0, 'rgba(100,170,255,0.3)');
+  eGlow.addColorStop(1, 'rgba(100,170,255,0)');
   dCtx.fillStyle = eGlow;
   dCtx.beginPath();
-  dCtx.arc(earthX, earthY, earthR*3, 0, Math.PI*2);
+  dCtx.arc(earthX, earthY, earthR*3.5, 0, Math.PI*2);
   dCtx.fill();
   
-  // Motion arrow
-  const arrowLen = 20;
+  // Motion arrow — brighter
+  const arrowLen = 22;
   const arrowDx = (earthPathEndX - earthPathStartX);
   const arrowDy = (earthPeakY - earthBaseY) * 2 * (0.5 - earthT);
   const arrowL = Math.sqrt(arrowDx*arrowDx + arrowDy*arrowDy);
   const ax = arrowDx/arrowL * arrowLen;
   const ay = arrowDy/arrowL * arrowLen;
   
-  dCtx.strokeStyle = 'rgba(100,160,220,0.4)';
-  dCtx.lineWidth = 1.5;
+  dCtx.strokeStyle = 'rgba(130,180,255,0.7)';
+  dCtx.lineWidth = 2;
   dCtx.beginPath();
   dCtx.moveTo(earthX + earthR*1.5, earthY);
   dCtx.lineTo(earthX + earthR*1.5 + ax*0.6, earthY + ay*0.6);
   dCtx.stroke();
   // Arrowhead
-  dCtx.fillStyle = 'rgba(100,160,220,0.4)';
+  dCtx.fillStyle = 'rgba(130,180,255,0.7)';
   const tipX = earthX + earthR*1.5 + ax*0.6;
   const tipY = earthY + ay*0.6;
   const nax = ax/arrowLen, nay = ay/arrowLen;
   dCtx.beginPath();
   dCtx.moveTo(tipX, tipY);
-  dCtx.lineTo(tipX - nax*6 - nay*3, tipY - nay*6 + nax*3);
-  dCtx.lineTo(tipX - nax*6 + nay*3, tipY - nay*6 - nax*3);
+  dCtx.lineTo(tipX - nax*7 - nay*4, tipY - nay*7 + nax*4);
+  dCtx.lineTo(tipX - nax*7 + nay*4, tipY - nay*7 - nax*4);
   dCtx.fill();
   
-  // Labels
-  dCtx.font = '10px "JetBrains Mono", monospace';
-  dCtx.fillStyle = 'rgba(100,160,220,0.5)';
+  // Labels — much brighter
+  dCtx.font = '12px "JetBrains Mono", monospace';
+  dCtx.fillStyle = 'rgba(130,180,255,0.85)';
   dCtx.textAlign = 'center';
-  dCtx.fillText('EARTH', earthX, earthY + earthR + 14);
+  dCtx.fillText('EARTH', earthX, earthY + earthR + 16);
   
-  dCtx.fillStyle = 'rgba(200,170,120,0.4)';
-  dCtx.fillText('SWIFT-TUTTLE DEBRIS', streamCX, streamCY - streamH - 8);
+  dCtx.fillStyle = 'rgba(240,200,130,0.75)';
+  dCtx.font = '11px "JetBrains Mono", monospace';
+  dCtx.fillText('SWIFT-TUTTLE DEBRIS STREAM', streamCX, streamCY - streamH - 10);
   
-  // Comet label at the denser end
-  dCtx.font = '9px "JetBrains Mono", monospace';
-  dCtx.fillStyle = 'rgba(200,170,120,0.3)';
+  dCtx.font = '10px "JetBrains Mono", monospace';
+  dCtx.fillStyle = 'rgba(220,190,130,0.5)';
   dCtx.textAlign = 'right';
-  dCtx.fillText('comet orbit path', dW - 20, streamCY + streamH + 18);
+  dCtx.fillText('comet orbit path', dW - 15, streamCY + streamH + 20);
   
   dCtx.restore();
   
