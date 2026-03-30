@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VECTOR ZONE</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Share Tech Mono', monospace; cursor: crosshair; }
+
+  #game-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+
+  #overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none; z-index: 10;
+  }
+  #overlay::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,65,0.02) 2px, rgba(0,255,65,0.02) 4px);
+  }
+  #overlay::after {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.5) 100%);
+  }
+
+  #hud-top-left {
+    position: fixed; top: 16px; left: 20px;
+    color: #00ff41; font-size: 12px; letter-spacing: 2px;
+    text-shadow: 0 0 8px #00ff41aa;
+    pointer-events: none; z-index: 20;
+  }
+  #score-num { font-size: 28px; letter-spacing: 4px; }
+
+  #hud-top-right {
+    position: fixed; top: 16px; right: 20px;
+    color: #00ff41; font-size: 12px; letter-spacing: 2px;
+    text-shadow: 0 0 8px #00ff41aa;
+    pointer-events: none; z-index: 20; text-align: right;
+  }
+  #lives-num { font-size: 22px; letter-spacing: 4px; }
+
+  #crosshair {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    pointer-events: none; z-index: 15; width: 48px; height: 48px;
+  }
+  .cx { position: absolute; background: #00ff41; box-shadow: 0 0 6px #00ff41; }
+  .cxh { width: 12px; height: 1.5px; top: 50%; margin-top: -0.75px; }
+  .cxv { height: 12px; width: 1.5px; left: 50%; margin-left: -0.75px; }
+  .cxl { left: 0; } .cxr { right: 0; } .cxt { top: 0; } .cxb { bottom: 0; }
+
+  #radar-box {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    pointer-events: none; z-index: 20;
+    width: 120px; height: 120px;
+  }
+  #radar-cvs {
+    display: block;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+  }
+
+  #msg-screen {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 50; color: #00ff41;
+    text-shadow: 0 0 20px #00ff41, 0 0 50px #00ff4144;
+  }
+  #msg-screen.hidden { display: none; }
+  #msg-t { font-size: 48px; letter-spacing: 10px; }
+  #msg-s { font-size: 14px; letter-spacing: 4px; opacity: 0.6; margin-top: 14px; }
+
+  #dmg-flash {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: red; opacity: 0; pointer-events: none; z-index: 11;
+    transition: opacity 0.06s;
+  }
+
+  #hint {
+    position: fixed; bottom: 145px; left: 50%; transform: translateX(-50%);
+    color: #00ff4155; font-size: 10px; letter-spacing: 2px;
+    pointer-events: none; z-index: 20; text-align: center; line-height: 2;
+    transition: opacity 1s;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game-canvas"></canvas>
+<div id="overlay"></div>
+<div id="dmg-flash"></div>
+
+<div id="crosshair">
+  <div class="cx cxh cxl"></div><div class="cx cxh cxr"></div>
+  <div class="cx cxv cxt"></div><div class="cx cxv cxb"></div>
+</div>
+
+<div id="hud-top-left">
+  <div>SCORE</div><div id="score-num">0000000</div>
+</div>
+<div id="hud-top-right">
+  <div>LIVES</div><div id="lives-num">◆ ◆ ◆</div>
+</div>
+
+<div id="radar-box">
+  <canvas id="radar-cvs" width="120" height="120"></canvas>
+</div>
+
+<div id="hint">
+  W/↑ FORWARD &nbsp; S/↓ REVERSE &nbsp; A/← LEFT &nbsp; D/→ RIGHT &nbsp; SPACE/CLICK FIRE
+</div>
+
+<div id="msg-screen">
+  <div id="msg-t">VECTOR ZONE</div>
+  <div id="msg-s">CLICK OR PRESS SPACE TO DEPLOY</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ════════════════════════════════════════════════════════
+   VECTOR ZONE — Battlezone-inspired 3D wireframe tank game
+   ════════════════════════════════════════════════════════ */
+
+const C_GREEN = 0x00ff41, C_GREEN_DIM = 0x00aa2a, C_GREEN_DARK = 0x003a0f;
+const C_RED = 0xff2222, C_YELLOW = 0xffcc00;
+const WORLD_SIZE = 140;
+
+let gameState = 'title';
+let score = 0, lives = 3, respawnTimer = 0, shootCD = 0, shakeAmt = 0;
+
+const P = { x: 0, z: 0, angle: 0, speed: 0 };
+const P_MAX = 0.5, P_ACC = 0.016, P_DEC = 0.01, P_TURN = 0.026;
+
+let enemies = [], pBullets = [], eBullets = [], booms = [], obstacles = [];
+
+const keys = {};
+let wantShoot = false;
+
+const msgScr = document.getElementById('msg-screen');
+const msgT = document.getElementById('msg-t');
+const msgS = document.getElementById('msg-s');
+const scoreEl = document.getElementById('score-num');
+const livesEl = document.getElementById('lives-num');
+const dmgEl = document.getElementById('dmg-flash');
+const hintEl = document.getElementById('hint');
+const rCvs = document.getElementById('radar-cvs');
+const rCtx = rCvs.getContext('2d');
+
+document.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key === ' ') { e.preventDefault(); doAction(); }
+});
+document.addEventListener('keyup', e => {
+  keys[e.key.toLowerCase()] = false;
+  if (e.key === ' ') wantShoot = false;
+});
+document.addEventListener('click', doAction);
+document.addEventListener('mousedown', () => { if (gameState === 'playing') wantShoot = true; });
+
+function doAction() {
+  if (gameState === 'title' || gameState === 'gameover') startGame();
+  else if (gameState === 'playing') wantShoot = true;
+}
+
+// ── THREE INIT ──
+let scene, camera, renderer, clock;
+
+function initThree() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000a00);
+  scene.fog = new THREE.FogExp2(0x000a00, 0.007);
+
+  camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 300);
+  camera.position.y = 2.8;
+
+  renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+  clock = new THREE.Clock();
+
+  window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+}
+
+function wMat(c, op) {
+  return new THREE.LineBasicMaterial({ color: c, transparent: op !== undefined, opacity: op || 1 });
+}
+function edgesOf(geo) { return new THREE.EdgesGeometry(geo); }
+function distXZ(x1, z1, x2, z2) { return Math.hypot(x1 - x2, z1 - z2); }
+
+// ── WORLD ──
+let groundGrid, mountainGroup;
+
+function buildWorld() {
+  groundGrid = new THREE.GridHelper(300, 60, C_GREEN_DARK, C_GREEN_DARK);
+  groundGrid.material.transparent = true;
+  groundGrid.material.opacity = 0.3;
+  scene.add(groundGrid);
+
+  mountainGroup = new THREE.Group();
+  const seg = 90, rad = 155;
+  const pts = [];
+  for (let i = 0; i <= seg; i++) {
+    const a = (i / seg) * Math.PI * 2;
+    const h = 8 + Math.sin(i * 1.3) * 5 + Math.cos(i * 2.7) * 4 + Math.sin(i * 0.5) * 7;
+    pts.push(new THREE.Vector3(Math.sin(a) * rad, h, Math.cos(a) * rad));
+  }
+  mountainGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wMat(C_GREEN_DARK, 0.45)));
+  for (let i = 0; i <= seg; i += 2) {
+    const p = pts[i];
+    const g = new THREE.BufferGeometry().setFromPoints([p, new THREE.Vector3(p.x, 0, p.z)]);
+    mountainGroup.add(new THREE.Line(g, wMat(C_GREEN_DARK, 0.2)));
+  }
+  scene.add(mountainGroup);
+}
+
+function spawnObstacles() {
+  obstacles.forEach(o => scene.remove(o.mesh));
+  obstacles = [];
+  for (let i = 0; i < 30; i++) {
+    const x = (Math.random() - 0.5) * WORLD_SIZE * 2;
+    const z = (Math.random() - 0.5) * WORLD_SIZE * 2;
+    const r = Math.random();
+    let mesh, hitR;
+
+    if (r < 0.4) {
+      const s = 2 + Math.random() * 3, h = 3 + Math.random() * 5;
+      mesh = new THREE.LineSegments(edgesOf(new THREE.ConeGeometry(s, h, 4)), wMat(C_GREEN_DIM));
+      mesh.position.set(x, h / 2, z);
+      hitR = s;
+    } else if (r < 0.75) {
+      const s = 1.5 + Math.random() * 2.5, h = 2 + Math.random() * 4;
+      mesh = new THREE.LineSegments(edgesOf(new THREE.BoxGeometry(s, h, s)), wMat(C_GREEN_DIM));
+      mesh.position.set(x, h / 2, z);
+      hitR = s * 0.7;
+    } else {
+      const s = 1 + Math.random(), h = 5 + Math.random() * 8;
+      mesh = new THREE.LineSegments(edgesOf(new THREE.BoxGeometry(s, h, s)), wMat(C_GREEN_DIM));
+      mesh.position.set(x, h / 2, z);
+      hitR = s;
+    }
+    scene.add(mesh);
+    obstacles.push({ x, z, mesh, hitR });
+  }
+}
+
+// ── TANK MODEL ──
+function makeTank(color) {
+  const g = new THREE.Group();
+  const hull = new THREE.LineSegments(edgesOf(new THREE.BoxGeometry(2.4, 0.9, 3.6)), wMat(color));
+  hull.position.y = 0.55; g.add(hull);
+
+  const turret = new THREE.LineSegments(edgesOf(new THREE.BoxGeometry(1.4, 0.65, 1.5)), wMat(color));
+  turret.position.y = 1.35; g.add(turret);
+
+  const barrel = new THREE.LineSegments(edgesOf(new THREE.BoxGeometry(0.2, 0.2, 2.8)), wMat(color));
+  barrel.position.set(0, 1.25, 2.2); g.add(barrel);
+
+  const treadGeo = edgesOf(new THREE.BoxGeometry(0.3, 0.55, 3.8));
+  const tL = new THREE.LineSegments(treadGeo, wMat(color));
+  tL.position.set(-1.35, 0.3, 0); g.add(tL);
+  const tR = new THREE.LineSegments(treadGeo.clone(), wMat(color));
+  tR.position.set(1.35, 0.3, 0); g.add(tR);
+
+  return g;
+}
+
+// ── ENEMIES ──
+function spawnEnemy() {
+  const a = Math.random() * Math.PI * 2;
+  const d = 40 + Math.random() * 50;
+  const ex = P.x + Math.sin(a) * d, ez = P.z + Math.cos(a) * d;
+  const mesh = makeTank(C_RED);
+  mesh.position.set(ex, 0, ez);
+  scene.add(mesh);
+  enemies.push({
+    x: ex, z: ez, angle: Math.random() * Math.PI * 2,
+    speed: 0.12 + Math.random() * 0.12, mesh,
+    shootTimer: 100 + Math.random() * 150,
+    state: 'hunt', stateTimer: 80 + Math.random() * 100,
+    strafeDir: Math.random() > 0.5 ? 1 : -1,
+  });
+}
+
+function removeEnemy(i) { scene.remove(enemies[i].mesh); enemies.splice(i, 1); }
+
+// ── BULLETS ──
+function makeBulletMesh(color) {
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, -0.6), new THREE.Vector3(0, 0, 0.6),
+  ]);
+  const m = new THREE.Line(geo, wMat(color));
+  // add a glow sphere
+  const dotGeo = edgesOf(new THREE.SphereGeometry(0.12, 4, 2));
+  const dot = new THREE.LineSegments(dotGeo, wMat(color));
+  m.add(dot);
+  return m;
+}
+
+function spawnPlayerBullet() {
+  const m = makeBulletMesh(C_GREEN);
+  const bx = P.x - Math.sin(P.angle) * 3.5, bz = P.z - Math.cos(P.angle) * 3.5;
+  m.position.set(bx, 1.25, bz); m.rotation.y = P.angle;
+  scene.add(m);
+  pBullets.push({ x: bx, z: bz, angle: P.angle, mesh: m, life: 120 });
+}
+
+function spawnEnemyBullet(e) {
+  const m = makeBulletMesh(C_YELLOW);
+  const bx = e.x + Math.sin(e.angle) * 3.5, bz = e.z + Math.cos(e.angle) * 3.5;
+  m.position.set(bx, 1.25, bz); m.rotation.y = -e.angle;
+  scene.add(m);
+  const aim = Math.atan2(P.x - e.x, P.z - e.z) + (Math.random() - 0.5) * 0.12;
+  eBullets.push({ x: bx, z: bz, angle: aim, mesh: m, life: 140 });
+}
+
+// ── EXPLOSIONS ──
+function createBoom(x, z, color) {
+  const group = new THREE.Group();
+  const parts = [];
+  for (let i = 0; i < 16; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const spd = 0.05 + Math.random() * 0.22;
+    const s = 0.12 + Math.random() * 0.3;
+    const geo = edgesOf(new THREE.BoxGeometry(s, s, s));
+    const m = new THREE.LineSegments(geo, wMat(color));
+    m.position.set(0, 0.5 + Math.random() * 1.5, 0);
+    group.add(m);
+    parts.push({ mesh: m, vx: Math.sin(a) * spd, vy: 0.04 + Math.random() * 0.12, vz: Math.cos(a) * spd, life: 35 + Math.random() * 30 });
+  }
+  group.position.set(x, 0, z);
+  scene.add(group);
+  booms.push({ group, parts, timer: 65 });
+}
+
+function updateBooms(dt60) {
+  for (let b of booms) {
+    b.timer -= dt60;
+    for (let p of b.parts) {
+      p.mesh.position.x += p.vx * dt60;
+      p.mesh.position.y += p.vy * dt60;
+      p.mesh.position.z += p.vz * dt60;
+      p.vy -= 0.004 * dt60;
+      p.life -= dt60;
+      p.mesh.visible = p.life > 0;
+    }
+  }
+  for (let i = booms.length - 1; i >= 0; i--) {
+    if (booms[i].timer <= 0) { scene.remove(booms[i].group); booms.splice(i, 1); }
+  }
+}
+
+// ── GAME LOGIC ──
+function startGame() {
+  enemies.forEach(e => scene.remove(e.mesh));
+  pBullets.forEach(b => scene.remove(b.mesh));
+  eBullets.forEach(b => scene.remove(b.mesh));
+  booms.forEach(b => scene.remove(b.group));
+  enemies = []; pBullets = []; eBullets = []; booms = [];
+
+  P.x = 0; P.z = 0; P.angle = 0; P.speed = 0;
+  score = 0; lives = 3; shootCD = 0; shakeAmt = 0;
+  gameState = 'playing';
+  msgScr.classList.add('hidden');
+  hintEl.style.opacity = '1';
+  setTimeout(() => hintEl.style.opacity = '0.2', 4000);
+  spawnObstacles();
+  for (let i = 0; i < 3; i++) spawnEnemy();
+}
+
+function playerDie() {
+  lives--;
+  createBoom(P.x, P.z, C_RED);
+  shakeAmt = 0.8;
+  dmgEl.style.opacity = '0.4';
+  setTimeout(() => dmgEl.style.opacity = '0', 200);
+
+  if (lives <= 0) {
+    gameState = 'gameover';
+    msgT.textContent = 'DESTROYED';
+    msgS.textContent = 'SCORE ' + score + ' — CLICK OR SPACE TO RESTART';
+    msgScr.classList.remove('hidden');
+  } else {
+    gameState = 'dead';
+    respawnTimer = 90;
+  }
+}
+
+function update() {
+  const rawDt = clock.getDelta();
+  const dt = Math.min(rawDt, 0.05);
+  const dt60 = dt * 60;
+
+  if (gameState === 'dead') {
+    respawnTimer -= dt60;
+    if (respawnTimer <= 0) gameState = 'playing';
+  }
+  if (gameState !== 'playing' && gameState !== 'dead') return;
+
+  // player
+  if (gameState === 'playing') {
+    if (keys['a'] || keys['arrowleft']) P.angle += P_TURN * dt60;
+    if (keys['d'] || keys['arrowright']) P.angle -= P_TURN * dt60;
+    if (keys['w'] || keys['arrowup']) P.speed = Math.min(P.speed + P_ACC * dt60, P_MAX);
+    else if (keys['s'] || keys['arrowdown']) P.speed = Math.max(P.speed - P_ACC * dt60, -P_MAX * 0.4);
+    else { if (P.speed > 0) P.speed = Math.max(0, P.speed - P_DEC * dt60); else P.speed = Math.min(0, P.speed + P_DEC * dt60); }
+
+    // camera looks down -Z by default, so forward = -Z
+    P.x -= Math.sin(P.angle) * P.speed * dt60;
+    P.z -= Math.cos(P.angle) * P.speed * dt60;
+
+    if (shootCD > 0) shootCD -= dt60;
+    if ((wantShoot || keys[' ']) && shootCD <= 0) { spawnPlayerBullet(); shootCD = 14; }
+  }
+
+  // camera
+  const sx = shakeAmt * (Math.random() - 0.5) * 0.3;
+  const sy = shakeAmt * (Math.random() - 0.5) * 0.2;
+  shakeAmt *= 0.9;
+  if (shakeAmt < 0.01) shakeAmt = 0;
+  camera.position.set(P.x + sx, 2.8 + sy, P.z);
+  camera.rotation.set(0, 0, 0);
+  camera.rotateY(P.angle);
+
+  groundGrid.position.x = Math.round(P.x / 5) * 5;
+  groundGrid.position.z = Math.round(P.z / 5) * 5;
+  if (mountainGroup) { mountainGroup.position.x = P.x; mountainGroup.position.z = P.z; }
+
+  // player bullets
+  for (let i = pBullets.length - 1; i >= 0; i--) {
+    const b = pBullets[i];
+    b.x -= Math.sin(b.angle) * 1.8 * dt60;
+    b.z -= Math.cos(b.angle) * 1.8 * dt60;
+    b.mesh.position.set(b.x, 1.25, b.z);
+    b.life -= dt60;
+    let hit = false;
+    for (let j = enemies.length - 1; j >= 0; j--) {
+      if (distXZ(b.x, b.z, enemies[j].x, enemies[j].z) < 2.5) {
+        createBoom(enemies[j].x, enemies[j].z, C_GREEN);
+        score += 1000; removeEnemy(j); hit = true; shakeAmt = 0.3;
+        setTimeout(() => { if (gameState === 'playing') spawnEnemy(); }, 2500);
+        break;
+      }
+    }
+    if (hit || b.life <= 0) { scene.remove(b.mesh); pBullets.splice(i, 1); }
+  }
+
+  // enemy bullets
+  for (let i = eBullets.length - 1; i >= 0; i--) {
+    const b = eBullets[i];
+    b.x += Math.sin(b.angle) * 1.1 * dt60;
+    b.z += Math.cos(b.angle) * 1.1 * dt60;
+    b.mesh.position.set(b.x, 1.25, b.z);
+    b.mesh.rotation.y = -b.angle;
+    b.life -= dt60;
+    if (gameState === 'playing' && distXZ(b.x, b.z, P.x, P.z) < 2) {
+      scene.remove(b.mesh); eBullets.splice(i, 1); playerDie(); continue;
+    }
+    if (b.life <= 0) { scene.remove(b.mesh); eBullets.splice(i, 1); }
+  }
+
+  // enemies AI
+  if (enemies.length < 3 + Math.floor(score / 5000)) spawnEnemy();
+  for (let e of enemies) {
+    const toP = Math.atan2(P.x - e.x, P.z - e.z);
+    const d = distXZ(e.x, e.z, P.x, P.z);
+    e.stateTimer -= dt60;
+    if (e.stateTimer <= 0) {
+      e.state = e.state === 'hunt' ? 'strafe' : 'hunt';
+      e.stateTimer = 80 + Math.random() * 120;
+      e.strafeDir = Math.random() > 0.5 ? 1 : -1;
+    }
+    let diff = toP - e.angle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    e.angle += Math.sign(diff) * Math.min(Math.abs(diff), 0.022 * dt60);
+
+    if (e.state === 'hunt' && d > 15) { e.x += Math.sin(e.angle) * e.speed * dt60; e.z += Math.cos(e.angle) * e.speed * dt60; }
+    else if (e.state === 'strafe') {
+      const sa = e.angle + Math.PI / 2 * e.strafeDir;
+      e.x += Math.sin(sa) * e.speed * 0.6 * dt60; e.z += Math.cos(sa) * e.speed * 0.6 * dt60;
+    }
+    e.mesh.position.set(e.x, 0, e.z);
+    e.mesh.rotation.y = -e.angle;
+
+    e.shootTimer -= dt60;
+    if (e.shootTimer <= 0 && d < 80 && gameState === 'playing') { spawnEnemyBullet(e); e.shootTimer = 90 + Math.random() * 130; }
+  }
+
+  updateBooms(dt60);
+}
+
+// ── RADAR (small 2D overlay) ──
+function drawRadar() {
+  const S = 120, H2 = S / 2, R = H2 - 3, scale = 1.2;
+  rCtx.clearRect(0, 0, S, S);
+  rCtx.fillStyle = 'rgba(0,14,0,0.7)';
+  rCtx.beginPath(); rCtx.arc(H2, H2, R, 0, Math.PI * 2); rCtx.fill();
+  rCtx.strokeStyle = '#00aa2a'; rCtx.lineWidth = 1;
+  rCtx.beginPath(); rCtx.arc(H2, H2, R, 0, Math.PI * 2); rCtx.stroke();
+  rCtx.strokeStyle = '#003a0f'; rCtx.beginPath();
+  rCtx.moveTo(H2, 3); rCtx.lineTo(H2, S - 3); rCtx.moveTo(3, H2); rCtx.lineTo(S - 3, H2); rCtx.stroke();
+
+  // player dot
+  rCtx.fillStyle = '#00ff41'; rCtx.fillRect(H2 - 2, H2 - 2, 4, 4);
+  // direction indicator (always points up since radar is player-relative)
+  rCtx.strokeStyle = '#00ff41'; rCtx.lineWidth = 1.5; rCtx.beginPath();
+  rCtx.moveTo(H2, H2); rCtx.lineTo(H2, H2 - 8); rCtx.stroke();
+
+  // rotate world positions into player-relative radar coords
+  // Player forward direction in world = (-sin(angle), -cos(angle))
+  // We want: things ahead -> up on radar (negative canvas Y)
+  const cosA = Math.cos(-P.angle), sinA = Math.sin(-P.angle);
+  function toRadar(wx, wz) {
+    const dx = wx - P.x, dz = wz - P.z;
+    // rotate by -angle so forward maps to -Z, then map -Z to up
+    const rotX = dx * cosA - dz * sinA;
+    const rotZ = dx * sinA + dz * cosA;
+    return { rx: H2 + rotX * scale, ry: H2 + rotZ * scale };
+  }
+
+  for (let e of enemies) {
+    const { rx, ry } = toRadar(e.x, e.z);
+    if (Math.hypot(rx - H2, ry - H2) < R - 2) { rCtx.fillStyle = '#ff2222'; rCtx.fillRect(rx - 2, ry - 2, 4, 4); }
+  }
+  for (let o of obstacles) {
+    const { rx, ry } = toRadar(o.x, o.z);
+    if (Math.hypot(rx - H2, ry - H2) < R - 2) { rCtx.fillStyle = '#003a0f'; rCtx.fillRect(rx - 1, ry - 1, 2, 2); }
+  }
+}
+
+function updateHUD() {
+  scoreEl.textContent = String(score).padStart(7, '0');
+  let l = ''; for (let i = 0; i < lives; i++) l += '◆ ';
+  livesEl.textContent = l || 'NONE';
+}
+
+// ── MAIN LOOP ──
+function loop() {
+  requestAnimationFrame(loop);
+  update();
+  if (gameState !== 'title') renderer.render(scene, camera);
+  drawRadar();
+  updateHUD();
+}
+
+initThree();
+buildWorld();
+clock.getDelta(); // prime the clock
+loop();
+</script>
+</body>
+</html>
