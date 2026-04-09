@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Earth's Interior & Gravity</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&family=Space+Mono:wght@400;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a12;
+    color: #e0dfe8;
+    font-family: 'Outfit', sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+  }
+
+  canvas {
+    display: block;
+    flex: 1;
+    cursor: grab;
+  }
+  canvas:active { cursor: grabbing; }
+
+  .header {
+    position: absolute;
+    top: 20px;
+    left: 28px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .header h1 {
+    font-family: 'Space Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #fff;
+    text-transform: uppercase;
+    text-shadow: 0 0 30px rgba(80,160,255,0.4);
+  }
+  .header p {
+    font-size: 13px;
+    color: #8a8a9e;
+    margin-top: 4px;
+    font-weight: 300;
+  }
+
+  .legend {
+    position: absolute;
+    bottom: 24px;
+    left: 28px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .legend-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.15);
+    flex-shrink: 0;
+  }
+
+  .info-panel {
+    position: absolute;
+    bottom: 24px;
+    right: 28px;
+    z-index: 10;
+    background: rgba(15,15,30,0.85);
+    border: 1px solid rgba(100,140,255,0.15);
+    border-radius: 12px;
+    padding: 16px 20px;
+    backdrop-filter: blur(12px);
+    pointer-events: none;
+    min-width: 200px;
+  }
+  .info-panel h3 {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    color: #6a8aff;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    margin-bottom: 5px;
+  }
+  .info-label { color: #8a8a9e; }
+  .info-value { color: #e0dfe8; font-weight: 500; }
+
+  .instructions {
+    position: absolute;
+    top: 20px;
+    right: 28px;
+    z-index: 10;
+    text-align: right;
+    pointer-events: none;
+  }
+  .instructions p {
+    font-size: 12px;
+    color: #5a5a7e;
+    line-height: 1.6;
+  }
+  .instructions span { color: #6a8aff; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Earth's Interior</h1>
+  <p>Cross-section with gravitational field visualization</p>
+</div>
+
+<div class="instructions">
+  <p><span>Drag</span> to rotate the globe</p>
+  <p><span>Scroll</span> to zoom in/out</p>
+  <p><span>Click</span> the surface to move the person</p>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#c8844a;"></div>Crust (~35 km)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#d94a2e;"></div>Mantle (2,900 km)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffb833;"></div>Outer Core (2,260 km, liquid)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffe066;"></div>Inner Core (1,220 km, solid)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:rgba(200,64,255,0.8);"></div>Gravity vector</div>
+</div>
+
+<div class="info-panel" id="infoPanel">
+  <h3>Gravity Info</h3>
+  <div class="info-row"><span class="info-label">Latitude</span><span class="info-value" id="latVal">0.0°</span></div>
+  <div class="info-row"><span class="info-label">Longitude</span><span class="info-value" id="lonVal">0.0°</span></div>
+  <div class="info-row"><span class="info-label">g</span><span class="info-value">9.81 m/s²</span></div>
+  <div class="info-row"><span class="info-label">Direction</span><span class="info-value">Toward center</span></div>
+</div>
+
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Camera
+let rotX = -0.3, rotY = 0.5;
+let zoom = 1.0;
+let dragging = false, lastMX, lastMY;
+
+// Person position on globe (spherical coords)
+let personTheta = Math.PI * 0.35; // polar angle
+let personPhi = Math.PI * 0.15;   // azimuthal
+
+const PIE_ANGLE = Math.PI * 0.25; // size of the pie slice cut (45 degrees)
+
+// 3D math helpers
+function rotateY(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0]*c + p[2]*s, p[1], -p[0]*s + p[2]*c];
+}
+function rotateX(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0], p[1]*c - p[2]*s, p[1]*s + p[2]*c];
+}
+function transform(p) {
+  let q = rotateY(p, rotY);
+  q = rotateX(q, rotX);
+  const scale = zoom * Math.min(W, H) * 0.28;
+  const perspective = 4;
+  const f = perspective / (perspective + q[2]);
+  return [W/2 + q[0] * scale * f, H/2 + q[1] * scale * f, q[2], f];
+}
+
+function spherePoint(theta, phi, r) {
+  return [
+    r * Math.sin(theta) * Math.cos(phi),
+    -r * Math.cos(theta),
+    r * Math.sin(theta) * Math.sin(phi)
+  ];
+}
+
+// Check if a point's azimuthal angle is inside the pie slice
+function isInSlice(phi) {
+  let p = ((phi % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+  return p < PIE_ANGLE;
+}
+
+function drawEllipseArc(cx, cy, rx, ry, startA, endA, color, lw, dash) {
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, startA, endA);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  if (dash) ctx.setLineDash(dash);
+  else ctx.setLineDash([]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// Simplified continent data: arrays of [lat, lon] polygon outlines (degrees)
+const continents = [
+  [[70,-165],[72,-140],[70,-100],[65,-65],[55,-55],[45,-65],[30,-80],[25,-80],[15,-90],[10,-85],[10,-78],[18,-88],[20,-105],[30,-115],[35,-120],[48,-125],[55,-130],[58,-140],[60,-150],[70,-165]],
+  [[10,-78],[10,-70],[5,-55],[-5,-35],[-15,-40],[-20,-40],[-30,-50],[-40,-62],[-50,-68],[-55,-68],[-50,-75],[-40,-73],[-20,-70],[-5,-80],[5,-78],[10,-78]],
+  [[72,20],[70,30],[60,30],[55,25],[50,5],[45,-5],[38,-8],[36,0],[40,5],[42,15],[40,25],[45,30],[50,40],[55,40],[60,40],[65,30],[72,20]],
+  [[36,0],[35,10],[30,32],[20,38],[12,44],[0,42],[-5,40],[-15,40],[-25,35],[-30,30],[-35,20],[-35,18],[-25,15],[-15,12],[-5,10],[5,2],[5,-5],[10,-15],[15,-17],[20,-17],[25,-15],[30,-10],[36,0]],
+  [[72,20],[72,40],[70,60],[68,80],[65,100],[60,120],[55,135],[50,140],[45,145],[40,140],[35,130],[30,120],[22,115],[20,110],[10,105],[0,105],[-8,115],[-8,105],[5,100],[10,100],[20,95],[25,85],[25,70],[28,60],[30,50],[30,32],[35,35],[40,45],[45,50],[50,60],[55,65],[60,60],[65,55],[70,50],[72,40],[72,20]],
+  [[-12,130],[-15,135],[-18,140],[-25,150],[-30,150],[-35,148],[-38,145],[-37,140],[-33,135],[-30,130],[-25,115],[-20,115],[-15,125],[-12,130]],
+  [[-65,-60],[-70,-40],[-75,-20],[-78,0],[-78,30],[-75,60],[-72,80],[-70,100],[-72,130],[-75,150],[-78,170],[-78,-170],[-75,-150],[-72,-130],[-70,-100],[-68,-80],[-65,-60]],
+  [[78,-70],[80,-50],[82,-30],[80,-20],[75,-20],[72,-25],[68,-45],[70,-55],[73,-60],[78,-70]],
+];
+
+function isPointInContinents(lat, lon) {
+  for (const cont of continents) {
+    let inside = false;
+    for (let i = 0, j = cont.length - 1; i < cont.length; j = i++) {
+      const yi = cont[i][0], xi = cont[i][1];
+      const yj = cont[j][0], xj = cont[j][1];
+      if (((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+    }
+    if (inside) return true;
+  }
+  return false;
+}
+
+// Build a land grid for fast lookup
+const LAND_RES = 90;
+const landGrid = [];
+(function buildLandGrid() {
+  for (let ti = 0; ti < LAND_RES; ti++) {
+    landGrid[ti] = [];
+    for (let pi = 0; pi < LAND_RES * 2; pi++) {
+      const lat = 90 - (ti / LAND_RES) * 180;
+      const lon = -180 + (pi / (LAND_RES * 2)) * 360;
+      landGrid[ti][pi] = isPointInContinents(lat, lon);
+    }
+  }
+})();
+
+function isLand(theta, phi) {
+  const lat = 90 - (theta * 180 / Math.PI);
+  // phi in our system: 0..2PI, map to lon -180..180
+  let lon = (phi * 180 / Math.PI) - 180;
+  const ti = Math.min(LAND_RES - 1, Math.max(0, Math.floor(((90 - lat) / 180) * LAND_RES)));
+  let pi = Math.floor(((lon + 180) / 360) * LAND_RES * 2);
+  pi = ((pi % (LAND_RES * 2)) + LAND_RES * 2) % (LAND_RES * 2);
+  return landGrid[ti][pi];
+}
+
+// Draw solid globe surface with ocean + land + wireframe
+// Collect cross-section FLAT FACE polygons for depth-sorted rendering
+function collectCrossSectionPolys(polys) {
+  const layers = [
+    { rInner: 0,     rOuter: 0.192, color: '#ffe066' }, // inner core
+    { rInner: 0.192, rOuter: 0.546, color: '#ffb833' }, // outer core
+    { rInner: 0.546, rOuter: 0.994, color: '#d94a2e' }, // mantle
+    { rInner: 0.994, rOuter: 1.0,   color: '#c8844a' }, // crust
+  ];
+
+  const segs = 30;
+
+  // Flat slice faces at phi=0 and phi=PIE_ANGLE
+  for (const phiAngle of [0, PIE_ANGLE]) {
+    for (const l of layers) {
+      for (let i = 0; i < segs; i++) {
+        const t0 = (i / segs) * Math.PI;
+        const t1 = ((i + 1) / segs) * Math.PI;
+        const p0o = spherePoint(t0, phiAngle, l.rOuter);
+        const p1o = spherePoint(t1, phiAngle, l.rOuter);
+        const p1i = spherePoint(t1, phiAngle, l.rInner);
+        const p0i = spherePoint(t0, phiAngle, l.rInner);
+
+        const s0o = transform(p0o);
+        const s1o = transform(p1o);
+        const s1i = transform(p1i);
+        const s0i = transform(p0i);
+
+        const avgZ = (s0o[2] + s1o[2] + s1i[2] + s0i[2]) / 4;
+
+        polys.push({
+          verts: [[s0o[0],s0o[1]],[s1o[0],s1o[1]],[s1i[0],s1i[1]],[s0i[0],s0i[1]]],
+          z: avgZ,
+          fill: l.color,
+          stroke: 'rgba(0,0,0,0.15)',
+          lw: 0.3
+        });
+      }
+    }
+  }
+}
+
+// Draw the curved interior of the pie slice separately
+// Uses painter's algorithm: draw from LARGEST radius to SMALLEST
+// so inner layers correctly paint over outer ones
+function drawCurvedInterior() {
+  const layers = [
+    { r: 1.0,   color: '#c8844a' }, // crust outer surface
+    { r: 0.994, color: '#d94a2e' }, // mantle outer surface
+    { r: 0.546, color: '#ffb833' }, // outer core surface
+    { r: 0.192, color: '#ffe066' }, // inner core surface
+  ];
+
+  const arcSegs = 28;
+  const tSegs = 28;
+
+  // Draw from outside in — each smaller shell paints over the bigger one
+  for (const l of layers) {
+    for (let i = 0; i < arcSegs; i++) {
+      const phi0 = PIE_ANGLE * (i / arcSegs);
+      const phi1 = PIE_ANGLE * ((i + 1) / arcSegs);
+      for (let j = 0; j < tSegs; j++) {
+        const t0 = (j / tSegs) * Math.PI;
+        const t1 = ((j + 1) / tSegs) * Math.PI;
+
+        const pa = spherePoint(t0, phi0, l.r);
+        const pb = spherePoint(t0, phi1, l.r);
+        const pc = spherePoint(t1, phi1, l.r);
+        const pd = spherePoint(t1, phi0, l.r);
+
+        const sa = transform(pa);
+        const sb = transform(pb);
+        const sc = transform(pc);
+        const sd = transform(pd);
+
+        const shade = 0.45 + 0.55 * l.r;
+
+        ctx.beginPath();
+        ctx.moveTo(sa[0], sa[1]);
+        ctx.lineTo(sb[0], sb[1]);
+        ctx.lineTo(sc[0], sc[1]);
+        ctx.lineTo(sd[0], sd[1]);
+        ctx.closePath();
+        ctx.fillStyle = adjustBrightness(l.color, shade);
+        ctx.fill();
+      }
+    }
+  }
+}
+
+// Collect solid surface polys
+function collectShellPolys(polys, radius) {
+  const thetaSegs = 40;
+  const phiSegs = 60;
+
+  for (let ti = 0; ti < thetaSegs; ti++) {
+    for (let pi = 0; pi < phiSegs; pi++) {
+      const theta0 = (ti / thetaSegs) * Math.PI;
+      const theta1 = ((ti + 1) / thetaSegs) * Math.PI;
+      const phi0 = PIE_ANGLE + (2 * Math.PI - PIE_ANGLE) * (pi / phiSegs);
+      const phi1 = PIE_ANGLE + (2 * Math.PI - PIE_ANGLE) * ((pi + 1) / phiSegs);
+
+      const thetaMid = (theta0 + theta1) / 2;
+      const phiMid = (phi0 + phi1) / 2;
+
+      const s00 = transform(spherePoint(theta0, phi0, radius));
+      const s01 = transform(spherePoint(theta0, phi1, radius));
+      const s10 = transform(spherePoint(theta1, phi0, radius));
+      const s11 = transform(spherePoint(theta1, phi1, radius));
+
+      const sMid = transform(spherePoint(thetaMid, phiMid, radius));
+      const land = isLand(thetaMid, phiMid);
+      const lightFactor = 0.5 + 0.5 * Math.max(0, -sMid[2]);
+
+      let r, g, b;
+      if (land) {
+        r = Math.floor(45 * lightFactor + 18);
+        g = Math.floor(135 * lightFactor + 25);
+        b = Math.floor(55 * lightFactor + 12);
+      } else {
+        r = Math.floor(65 * lightFactor + 25);
+        g = Math.floor(145 * lightFactor + 35);
+        b = Math.floor(200 * lightFactor + 35);
+      }
+
+      const avgZ = (s00[2] + s01[2] + s10[2] + s11[2]) / 4;
+
+      polys.push({
+        verts: [[s00[0],s00[1]],[s01[0],s01[1]],[s11[0],s11[1]],[s10[0],s10[1]]],
+        z: avgZ,
+        fill: `rgb(${r},${g},${b})`,
+        stroke: null,
+        lw: 0
+      });
+    }
+  }
+}
+
+function drawWireframe(radius) {
+  const segments = 80;
+  // Latitude lines
+  for (let lat = 1; lat < 7; lat++) {
+    const theta = (lat / 7) * Math.PI;
+    ctx.beginPath();
+    let first = true;
+    for (let i = 0; i <= segments; i++) {
+      const phi = PIE_ANGLE + (2 * Math.PI - PIE_ANGLE) * (i / segments);
+      const p = spherePoint(theta, phi, radius);
+      const [sx, sy] = transform(p);
+      if (first) { ctx.moveTo(sx, sy); first = false; }
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+  // Longitude lines
+  for (let lon = 0; lon < 16; lon++) {
+    const phi = PIE_ANGLE + (2 * Math.PI - PIE_ANGLE) * (lon / 16);
+    ctx.beginPath();
+    let first = true;
+    for (let i = 0; i <= segments / 2; i++) {
+      const theta = (i / (segments / 2)) * Math.PI;
+      const p = spherePoint(theta, phi, radius);
+      const [sx, sy] = transform(p);
+      if (first) { ctx.moveTo(sx, sy); first = false; }
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+    ctx.lineWidth = 0.4;
+    ctx.stroke();
+  }
+  // Equator
+  ctx.beginPath();
+  let first = true;
+  for (let i = 0; i <= segments; i++) {
+    const phi = PIE_ANGLE + (2 * Math.PI - PIE_ANGLE) * (i / segments);
+    const p = spherePoint(Math.PI / 2, phi, radius);
+    const [sx, sy] = transform(p);
+    if (first) { ctx.moveTo(sx, sy); first = false; }
+    else ctx.lineTo(sx, sy);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+}
+
+function adjustBrightness(hex, factor) {
+  let r = parseInt(hex.slice(1,3),16);
+  let g = parseInt(hex.slice(3,5),16);
+  let b = parseInt(hex.slice(5,7),16);
+  r = Math.floor(r * factor);
+  g = Math.floor(g * factor);
+  b = Math.floor(b * factor);
+  return `rgb(${r},${g},${b})`;
+}
+
+// Glowing arrow
+function drawGlowArrow(from, to, color, glowColor) {
+  const [x1, y1] = transform(from);
+  const [x2, y2] = transform(to);
+
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  if (len < 2) return;
+
+  // Glow
+  ctx.save();
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = 18;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+
+  // Arrowhead
+  const angle = Math.atan2(dy, dx);
+  const headLen = Math.min(14, len * 0.3);
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - headLen * Math.cos(angle - 0.4), y2 - headLen * Math.sin(angle - 0.4));
+  ctx.lineTo(x2 - headLen * Math.cos(angle + 0.4), y2 - headLen * Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+}
+
+// Draw person (stick figure)
+function drawPerson(theta, phi) {
+  const R = 1.0;
+  const surfacePos = spherePoint(theta, phi, R);
+  const normal = [surfacePos[0], surfacePos[1], surfacePos[2]]; // outward normal
+  const nLen = Math.sqrt(normal[0]**2 + normal[1]**2 + normal[2]**2);
+  const n = [normal[0]/nLen, normal[1]/nLen, normal[2]/nLen];
+
+  // Person stands along the normal
+  const headHeight = 0.15;
+  const bodyHeight = 0.08;
+
+  const footPos = [surfacePos[0] + n[0]*0.01, surfacePos[1] + n[1]*0.01, surfacePos[2] + n[2]*0.01];
+  const hipPos = [footPos[0] + n[0]*bodyHeight*0.4, footPos[1] + n[1]*bodyHeight*0.4, footPos[2] + n[2]*bodyHeight*0.4];
+  const shoulderPos = [footPos[0] + n[0]*bodyHeight, footPos[1] + n[1]*bodyHeight, footPos[2] + n[2]*bodyHeight];
+  const headPos = [footPos[0] + n[0]*headHeight, footPos[1] + n[1]*headHeight, footPos[2] + n[2]*headHeight];
+
+  // Get tangent vector (perpendicular to normal, somewhat arbitrary)
+  let tangent;
+  if (Math.abs(n[1]) < 0.99) {
+    tangent = [n[2], 0, -n[0]];
+  } else {
+    tangent = [1, 0, 0];
+  }
+  const tLen = Math.sqrt(tangent[0]**2 + tangent[1]**2 + tangent[2]**2);
+  tangent = [tangent[0]/tLen, tangent[1]/tLen, tangent[2]/tLen];
+
+  const legSpread = 0.02;
+  const armSpread = 0.03;
+
+  const leftFoot = [footPos[0] - tangent[0]*legSpread, footPos[1] - tangent[1]*legSpread, footPos[2] - tangent[2]*legSpread];
+  const rightFoot = [footPos[0] + tangent[0]*legSpread, footPos[1] + tangent[1]*legSpread, footPos[2] + tangent[2]*legSpread];
+  const leftHand = [shoulderPos[0] - tangent[0]*armSpread - n[0]*0.01, shoulderPos[1] - tangent[1]*armSpread - n[1]*0.01, shoulderPos[2] - tangent[2]*armSpread - n[2]*0.01];
+  const rightHand = [shoulderPos[0] + tangent[0]*armSpread - n[0]*0.01, shoulderPos[1] + tangent[1]*armSpread - n[1]*0.01, shoulderPos[2] + tangent[2]*armSpread - n[2]*0.01];
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(180,60,255,0.7)';
+  ctx.shadowBlur = 10;
+  ctx.strokeStyle = '#c840ff';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+
+  function line(a, b) {
+    const [ax, ay] = transform(a);
+    const [bx, by] = transform(b);
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+  }
+
+  // Legs
+  line(leftFoot, hipPos);
+  line(rightFoot, hipPos);
+  // Body
+  line(hipPos, shoulderPos);
+  // Arms
+  line(leftHand, shoulderPos);
+  line(rightHand, shoulderPos);
+  // Head
+  const [hx, hy] = transform(headPos);
+  const [sx2, sy2] = transform(shoulderPos);
+  const headR = Math.max(4, Math.abs(hy - sy2) * 0.6);
+  ctx.beginPath();
+  ctx.arc(hx, hy, headR, 0, Math.PI * 2);
+  ctx.fillStyle = '#c840ff';
+  ctx.fill();
+  ctx.restore();
+
+  // Draw gravity arrow: from above person, pointing toward center
+  const arrowStart = [
+    surfacePos[0] + n[0] * 0.25,
+    surfacePos[1] + n[1] * 0.25,
+    surfacePos[2] + n[2] * 0.25
+  ];
+  const arrowEnd = [
+    surfacePos[0] + n[0] * 0.05,
+    surfacePos[1] + n[1] * 0.05,
+    surfacePos[2] + n[2] * 0.05
+  ];
+  drawGlowArrow(arrowStart, arrowEnd, 'rgba(200,64,255,0.9)', 'rgba(180,60,255,0.8)');
+
+  // Draw a second, longer arrow showing gravity pulling through the body toward center
+  const arrowStart2 = [
+    surfacePos[0] - n[0] * 0.02,
+    surfacePos[1] - n[1] * 0.02,
+    surfacePos[2] - n[2] * 0.02
+  ];
+  const arrowEnd2 = [
+    surfacePos[0] - n[0] * 0.25,
+    surfacePos[1] - n[1] * 0.25,
+    surfacePos[2] - n[2] * 0.25
+  ];
+  drawGlowArrow(arrowStart2, arrowEnd2, 'rgba(180,50,255,0.7)', 'rgba(160,40,255,0.6)');
+
+  // "g" label
+  const labelPos = transform([arrowStart[0] + n[0]*0.03 + tangent[0]*0.04, arrowStart[1] + n[1]*0.03 + tangent[1]*0.04, arrowStart[2] + n[2]*0.03 + tangent[2]*0.04]);
+  ctx.save();
+  ctx.font = 'bold 14px "Space Mono", monospace';
+  ctx.fillStyle = 'rgba(200,64,255,0.9)';
+  ctx.shadowColor = 'rgba(180,60,255,0.5)';
+  ctx.shadowBlur = 8;
+  ctx.fillText('g⃗', labelPos[0], labelPos[1]);
+  ctx.restore();
+
+  // Update info panel
+  const latDeg = (90 - (theta * 180 / Math.PI)).toFixed(1);
+  const lonDeg = (phi * 180 / Math.PI).toFixed(1);
+  document.getElementById('latVal').textContent = latDeg + '°';
+  document.getElementById('lonVal').textContent = lonDeg + '°';
+}
+
+// Background stars
+const stars = [];
+for (let i = 0; i < 200; i++) {
+  stars.push({
+    x: Math.random(),
+    y: Math.random(),
+    r: Math.random() * 1.5 + 0.3,
+    a: Math.random() * 0.6 + 0.2
+  });
+}
+
+function drawStars() {
+  for (const s of stars) {
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200,210,255,${s.a})`;
+    ctx.fill();
+  }
+}
+
+// Atmosphere glow
+function drawAtmosphere() {
+  const center = transform([0, 0, 0]);
+  const edge = transform([1.0, 0, 0]);
+  const r = Math.abs(edge[0] - center[0]) * 1.15;
+
+  const grad = ctx.createRadialGradient(center[0], center[1], r * 0.85, center[0], center[1], r * 1.2);
+  grad.addColorStop(0, 'rgba(60,140,255,0.12)');
+  grad.addColorStop(0.5, 'rgba(60,140,255,0.05)');
+  grad.addColorStop(1, 'rgba(60,140,255,0)');
+  ctx.beginPath();
+  ctx.arc(center[0], center[1], r * 1.2, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+}
+
+let animTime = 0;
+
+function draw() {
+  animTime += 0.016;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background gradient
+  const bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
+  bg.addColorStop(0, '#0f0f20');
+  bg.addColorStop(1, '#060610');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars();
+  drawAtmosphere();
+
+  // Draw curved interior of pie slice first (outside-in painter's algorithm)
+  drawCurvedInterior();
+
+  // Collect flat slice faces and surface shell polygons
+  const polys = [];
+  collectCrossSectionPolys(polys);
+  collectShellPolys(polys, 1.0);
+
+  // Sort back-to-front (highest z = farthest = draw first)
+  polys.sort((a, b) => b.z - a.z);
+
+  // Draw all sorted polygons
+  for (const p of polys) {
+    ctx.beginPath();
+    ctx.moveTo(p.verts[0][0], p.verts[0][1]);
+    for (let i = 1; i < p.verts.length; i++) {
+      ctx.lineTo(p.verts[i][0], p.verts[i][1]);
+    }
+    ctx.closePath();
+    ctx.fillStyle = p.fill;
+    ctx.fill();
+    if (p.stroke) {
+      ctx.strokeStyle = p.stroke;
+      ctx.lineWidth = p.lw;
+      ctx.stroke();
+    }
+  }
+
+  // Wireframe on top of surface
+  drawWireframe(1.0);
+
+  // Draw layer boundary circles on the slice faces
+  const boundaryRadii = [0.192, 0.546, 0.994];
+  const boundarySegs = 60;
+  for (const phiAngle of [0, PIE_ANGLE]) {
+    for (const br of boundaryRadii) {
+      ctx.beginPath();
+      let first = true;
+      for (let i = 0; i <= boundarySegs; i++) {
+        const theta = (i / boundarySegs) * Math.PI;
+        const p = spherePoint(theta, phiAngle, br);
+        const [sx, sy] = transform(p);
+        if (first) { ctx.moveTo(sx, sy); first = false; }
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+  }
+
+  // Draw layer labels on slice face at phi=0
+  const layerLabels = [
+    { r: 0.096, label: 'Inner Core', color: '#ffe066' },
+    { r: 0.37,  label: 'Outer Core', color: '#ffb833' },
+    { r: 0.77,  label: 'Mantle', color: '#fff' },
+    { r: 0.997, label: 'Crust', color: '#fff' },
+  ];
+  for (const ll of layerLabels) {
+    const lp = spherePoint(Math.PI * 0.5, PIE_ANGLE * 0.5, ll.r);
+    const [lx, ly, lz] = transform(lp);
+    if (lz < 0.5) { // only label if facing us
+      ctx.save();
+      ctx.font = `bold ${ll.r < 0.2 ? 9 : 11}px "Space Mono", monospace`;
+      ctx.fillStyle = ll.color;
+      ctx.textAlign = 'center';
+      ctx.globalAlpha = 0.8;
+      ctx.fillText(ll.label, lx, ly);
+      ctx.restore();
+    }
+  }
+
+  // Draw person and gravity
+  drawPerson(personTheta, personPhi);
+
+  requestAnimationFrame(draw);
+}
+
+// Mouse interaction - rotate globe
+canvas.addEventListener('mousedown', (e) => {
+  dragging = true;
+  lastMX = e.clientX;
+  lastMY = e.clientY;
+});
+canvas.addEventListener('mousemove', (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - lastMX;
+  const dy = e.clientY - lastMY;
+  rotY += dx * 0.005;
+  rotX += dy * 0.005;
+  rotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX));
+  lastMX = e.clientX;
+  lastMY = e.clientY;
+});
+canvas.addEventListener('mouseup', () => dragging = false);
+canvas.addEventListener('mouseleave', () => dragging = false);
+
+// Scroll zoom
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  zoom *= e.deltaY > 0 ? 0.95 : 1.05;
+  zoom = Math.max(0.4, Math.min(2.5, zoom));
+}, { passive: false });
+
+// Click to move person - project click onto sphere
+canvas.addEventListener('click', (e) => {
+  if (Math.abs(e.clientX - lastMX) > 5 || Math.abs(e.clientY - lastMY) > 5) return;
+
+  // Ray-sphere intersection in screen space
+  // We'll sample the sphere to find closest point to click
+  const mx = e.clientX, my = e.clientY;
+  let bestDist = Infinity;
+  let bestTheta = personTheta, bestPhi = personPhi;
+
+  for (let ti = 1; ti < 40; ti++) {
+    for (let pi = 0; pi < 60; pi++) {
+      const theta = (ti / 40) * Math.PI;
+      const phi = PIE_ANGLE + (2 * Math.PI - PIE_ANGLE) * (pi / 60);
+      const p = spherePoint(theta, phi, 1.0);
+      const [sx, sy, sz] = transform(p);
+      const dist = (sx - mx)**2 + (sy - my)**2;
+      if (dist < bestDist && sz < 1.5) {
+        bestDist = dist;
+        bestTheta = theta;
+        bestPhi = phi;
+      }
+    }
+  }
+
+  if (bestDist < 2500) {
+    personTheta = bestTheta;
+    personPhi = bestPhi;
+  }
+});
+
+// Touch support
+let touchId = null;
+canvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    dragging = true;
+    touchId = t.identifier;
+    lastMX = t.clientX;
+    lastMY = t.clientY;
+  }
+});
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier === touchId && dragging) {
+      const dx = t.clientX - lastMX;
+      const dy = t.clientY - lastMY;
+      rotY += dx * 0.005;
+      rotX += dy * 0.005;
+      rotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX));
+      lastMX = t.clientX;
+      lastMY = t.clientY;
+    }
+  }
+}, { passive: false });
+canvas.addEventListener('touchend', (e) => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === touchId) {
+      dragging = false;
+      touchId = null;
+    }
+  }
+});
+
+draw();
+</script>
+</body>
+</html>
