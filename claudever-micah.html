@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mancini's Sleepworld PDP — Relax, We've Got You</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Mulish:wght@300;400;500;600;700&display=swap');
+
+:root{
+  /* BRAND PALETTE — unchanged */
+  --navy:#1B4D8E;          /* brand navy */
+  --cart:#E2622A;          /* brand orange, primary action only */
+  /* tints derived from the same navy (not new colors) */
+  --tint:#EDF2F9;
+  --tint2:#F5F8FC;
+  --line:#E3E9F0;
+  --ink:#3A4048;           /* soft neutral charcoal for body, calmer than black */
+  --muted:#8A93A0;
+  --white:#FFFFFF;
+  --display:'Lexend', sans-serif;
+  --body:'Mulish',system-ui,-apple-system,sans-serif;
+  --shadow:0 18px 44px rgba(27,77,142,.12);
+  --shadow-sm:0 8px 22px rgba(27,77,142,.08);
+  --r:22px;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{font-family:var(--body); color:var(--ink); background:#E9EDF2; font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased;}
+svg{display:inline-block; vertical-align:middle;}
+a{color:var(--navy); text-decoration:none;}
+
+.stage{display:flex; gap:28px; justify-content:center; align-items:flex-start; flex-wrap:wrap; padding:36px 16px 64px;}
+
+/* ====== the phone ====== */
+.phone{width:390px; background:linear-gradient(180deg,#FFFFFF 0%, var(--tint2) 60%, var(--tint) 100%);
+  border-radius:30px; overflow:hidden; box-shadow:var(--shadow); border:1px solid var(--line);}
+.phone > *{animation:rise .7s ease both;}
+.phone > *:nth-child(2){animation-delay:.05s;} .phone > *:nth-child(3){animation-delay:.1s;}
+.phone > *:nth-child(4){animation-delay:.16s;} .phone > *:nth-child(5){animation-delay:.22s;}
+.phone > *:nth-child(6){animation-delay:.28s;} .phone > *:nth-child(7){animation-delay:.34s;}
+@keyframes rise{from{opacity:0; transform:translateY(14px);}to{opacity:1; transform:translateY(0);}}
+
+/* hero */
+.hero{position:relative; height:250px; margin:14px 14px 0; border-radius:var(--r);
+  background:linear-gradient(160deg,#26538f,#1B4D8E 55%,#16406f); overflow:hidden;}
+.hero .moon{position:absolute; top:24px; right:26px; width:64px; height:64px; border-radius:50%;
+  background:radial-gradient(circle at 38% 38%, #fdf6e8, #f1e4c5);
+  box-shadow:0 0 0 0 rgba(253,246,232,.5); animation:breathe 5.5s ease-in-out infinite;}
+.hero .moon::after{content:''; position:absolute; top:-6px; right:-8px; width:54px; height:54px; border-radius:50%; background:#1B4D8E;}
+@keyframes breathe{0%,100%{box-shadow:0 0 18px 4px rgba(253,246,232,.25);}50%{box-shadow:0 0 30px 10px rgba(253,246,232,.45);}}
+.hero .stars span{position:absolute; width:3px; height:3px; border-radius:50%; background:#cfe0f5; opacity:.7;}
+.hero .badge{position:absolute; bottom:16px; left:16px; background:rgba(255,255,255,.92); color:var(--navy);
+  font-size:10px; letter-spacing:1.6px; text-transform:uppercase; font-weight:700; padding:6px 13px; border-radius:30px;}
+.hero .prod{position:absolute; bottom:14px; right:16px; color:rgba(255,255,255,.55); font-family:var(--display); font-style:italic; font-size:13px;}
+
+/* reassurance ribbon */
+.ribbon{margin:16px 14px 0; text-align:center;}
+.ribbon h2{font-family:var(--display); font-weight:400; font-size:24px; color:var(--navy); letter-spacing:.2px;}
+.ribbon p{font-size:13px; color:var(--muted); margin-top:4px;}
+
+/* identity card */
+.card{margin:16px 14px 0; background:var(--white); border-radius:var(--r); box-shadow:var(--shadow-sm); padding:22px;}
+.brand{font-size:11px; letter-spacing:3px; text-transform:uppercase; color:var(--navy); font-weight:700; opacity:.8;}
+h1{font-family:var(--display); font-weight:400; font-size:27px; line-height:1.18; color:var(--navy); margin:8px 0 8px;}
+.rate{color:#E0A21E; font-size:14px; letter-spacing:2px;}
+.rate small{color:var(--muted); letter-spacing:0; font-family:var(--body); font-size:13px;}
+.price{font-family:var(--display); font-size:28px; color:var(--ink); margin-top:14px; font-weight:500;}
+.price .save{font-family:var(--body); font-size:13px; color:var(--cart); font-weight:700; margin-left:6px;}
+.price .msrp{font-family:var(--body); font-size:13px; color:var(--muted); text-decoration:line-through; margin-left:4px;}
+.fin{font-size:13px; color:var(--muted); margin-top:4px;}
+
+.hr{height:1px; background:var(--line); margin:18px 0;}
+.sizes{display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;}
+.size{border:1px solid var(--line); background:#fff; border-radius:30px; padding:9px 18px; font-size:13px; font-weight:600; color:var(--ink); cursor:pointer; transition:.2s;}
+.size.on{background:var(--tint); border-color:var(--navy); color:var(--navy);}
+.sz-label{font-size:13px; font-weight:600; color:var(--ink);}
+
+/* store availability — warm framing */
+.savail{margin-top:16px; background:var(--tint); border-radius:18px; padding:16px;}
+.savail .st{display:flex; gap:8px; align-items:center; color:var(--navy); font-weight:700; font-size:13px;}
+.savail .sn{font-family:var(--display); font-size:19px; color:var(--navy); margin-top:4px;}
+.savail .sm{font-size:12px; color:var(--muted); margin-top:2px;}
+.savail .warm{font-size:12px; color:var(--navy); opacity:.85; margin-top:8px; font-style:italic; font-family:var(--display);}
+
+/* CTAs */
+.cta{display:flex; align-items:center; justify-content:center; gap:8px; width:100%; border-radius:40px; padding:17px; font-size:14px; font-weight:700; letter-spacing:.3px; cursor:pointer; border:1.5px solid transparent; font-family:var(--body);}
+.cta-primary{background:var(--cart); color:#fff; margin-top:18px; box-shadow:0 10px 24px rgba(226,98,42,.28);}
+.cta-ghost{background:#fff; color:var(--navy); border-color:var(--navy); margin-top:10px;}
+
+/* we got you support strip */
+.support{margin:16px 14px 0; background:linear-gradient(135deg, var(--navy), #16406f); border-radius:var(--r); padding:20px; color:#fff;}
+.support h3{font-family:var(--display); font-weight:400; font-size:18px; margin-bottom:10px;}
+.support .row{display:flex; gap:10px; align-items:center; padding:7px 0; font-size:13px; color:rgba(255,255,255,.9);}
+.support .row svg{color:#cfe0f5; flex:0 0 auto;}
+
+/* promise — calm */
+.promise{margin:16px 14px 0; background:#fff; border-radius:var(--r); box-shadow:var(--shadow-sm); padding:24px 20px;}
+.promise .ph{font-family:var(--display); font-weight:400; font-size:23px; text-align:center; color:var(--navy);}
+.promise .psub{text-align:center; font-size:12px; color:var(--muted); margin:4px 0 20px;}
+.pgrid{display:grid; grid-template-columns:1fr 1fr; gap:20px 14px;}
+.pitem{text-align:center;}
+.pitem .ring{width:58px; height:58px; border-radius:50%; background:var(--tint); display:flex; align-items:center; justify-content:center; margin:0 auto 8px; color:var(--navy);}
+.pitem h4{font-family:var(--display); font-weight:500; font-size:14px; color:var(--navy);}
+.pitem p{font-size:11px; color:var(--muted); margin-top:2px;}
+
+/* content cards */
+.content{margin:16px 14px 18px;}
+.ccard{background:#fff; border-radius:18px; box-shadow:var(--shadow-sm); padding:18px; margin-bottom:10px;}
+.ccard .ct{display:flex; justify-content:space-between; align-items:center; cursor:pointer;}
+.ccard .ct h4{font-family:var(--display); font-weight:500; font-size:17px; color:var(--navy);}
+.ccard .ct .pl{color:var(--cart); font-size:22px; line-height:1; transition:transform .3s ease;}
+.ccard.open .ct .pl{transform:rotate(45deg);}
+.ccard .teaser{font-size:12px; color:var(--muted); margin-top:5px;}
+.ccard.open .teaser{display:none;}
+.ccard .cc{max-height:0; opacity:0; overflow:hidden; transition:max-height .35s ease,opacity .3s ease;}
+.ccard.open .cc{max-height:320px; opacity:1;}
+.ccard .cc p{font-size:13.5px; color:#5b626c; line-height:1.75; padding-top:10px;}
+
+/* side note */
+.note{width:330px; align-self:flex-start; background:#fff; border-radius:18px; box-shadow:var(--shadow-sm); padding:20px;}
+.note h3{font-family:var(--display); font-weight:500; font-size:18px; color:var(--navy); margin-bottom:6px;}
+.note p{font-size:12.5px; color:#6b7178; margin-bottom:10px;}
+.note table{width:100%; font-size:12.5px; border-collapse:collapse;}
+.note td{padding:7px 0; vertical-align:top; border-bottom:1px solid var(--line);}
+.note td:first-child{color:var(--navy); font-weight:700; width:34%;}
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <div class="phone">
+    <!-- hero -->
+    <div class="hero">
+      <div class="stars">
+        <span style="top:40px; left:40px;"></span><span style="top:70px; left:120px;"></span>
+        <span style="top:54px; left:200px;"></span><span style="top:100px; left:90px;"></span>
+        <span style="top:130px; left:170px;"></span><span style="top:34px; left:250px;"></span>
+      </div>
+      <div class="moon"></div>
+      <div class="badge">Medium · On Sale</div>
+      <div class="prod">handcrafted since 1940</div>
+    </div>
+
+    <!-- reassurance ribbon -->
+    <div class="ribbon">
+      <h2>Relax. We've got the rest.</h2>
+      <p>Try it for 120 nights. Free delivery and setup. No pressure to decide.</p>
+    </div>
+
+    <!-- identity -->
+    <div class="card">
+      <div class="brand">Aireloom</div>
+      <h1>Bay Preferred Trinity Medium 15.5&Prime;</h1>
+      <div class="rate">★★★★⯨ <small>4.5 · 24 reviews</small></div>
+      <div class="price">$3,799.99 <span class="save">Save 10%</span> <span class="msrp">$4,199.99</span></div>
+      <div class="fin">0% APR or as low as $185/mo with Affirm</div>
+
+      <div class="hr"></div>
+      <div class="sz-label">Size: <span id="szName">TwinXL</span></div>
+      <div class="sizes">
+        <span class="size" onclick="pickSize(this,'Twin')">Twin</span>
+        <span class="size on" onclick="pickSize(this,'TwinXL')">TwinXL</span>
+        <span class="size" onclick="pickSize(this,'Queen')">Queen</span>
+        <span class="size" onclick="pickSize(this,'King')">King</span>
+      </div>
+
+      <!-- store availability -->
+      <div class="savail">
+        <div class="st"><span data-ic="store"></span> Available to try in store</div>
+        <div class="sn">Livermore Showroom</div>
+        <div class="sm">2.3 mi · Open until 8 PM · <a href="#" onclick="event.preventDefault()" style="color:var(--navy); text-decoration:underline;">Change store</a></div>
+        <div class="warm">Come feel it whenever you're ready. No rushing.</div>
+      </div>
+
+      <button class="cta cta-primary">Add to Cart</button>
+      <button class="cta cta-ghost"><span data-ic="map-pin"></span> Find a Store Near Me</button>
+    </div>
+
+    <!-- we got you support -->
+    <div class="support">
+      <h3>However you decide, we've got you.</h3>
+      <div class="row"><span data-ic="truck"></span> We deliver it and set it up for you.</div>
+      <div class="row"><span data-ic="moon"></span> Sleep on it for 120 nights, on us.</div>
+      <div class="row"><span data-ic="users"></span> A specialist will walk you through every option.</div>
+    </div>
+
+    <!-- promise -->
+    <div class="promise">
+      <div class="ph">Our Promise to You</div>
+      <div class="psub">Sixty-five years of helping the Bay Area sleep better</div>
+      <div class="pgrid">
+        <div class="pitem"><div class="ring" data-ic="shield"></div><h4>120 Nights</h4><p>365 with a protector</p></div>
+        <div class="pitem"><div class="ring" data-ic="tag"></div><h4>Best Price</h4><p>We match it</p></div>
+        <div class="pitem"><div class="ring" data-ic="truck"></div><h4>Free Delivery</h4><p>White-glove setup</p></div>
+        <div class="pitem"><div class="ring" data-ic="card"></div><h4>Financing</h4><p>0% APR options</p></div>
+      </div>
+    </div>
+
+    <!-- content cards -->
+    <div class="content">
+      <div class="ccard open" onclick="this.classList.toggle('open')">
+        <div class="ct"><h4>About This Mattress</h4><span class="pl">+</span></div>
+        <div class="teaser">Handcrafted luxury hybrid since 1940</div>
+        <div class="cc"><p>The Aireloom Lift creates a breathable chamber so each layer moves with your body instead of compressing flat. A medium, plush surface rests over responsive coils.</p></div>
+      </div>
+      <div class="ccard" onclick="this.classList.toggle('open')">
+        <div class="ct"><h4>Best Sleep Match</h4><span class="pl">+</span></div>
+        <div class="teaser">Back and side sleepers, medium feel</div>
+        <div class="cc"><p>Natural latex and copper micro coils ease shoulder and hip pressure without letting the lumbar sag.</p></div>
+      </div>
+      <div class="ccard" onclick="this.classList.toggle('open')">
+        <div class="ct"><h4>Construction</h4><span class="pl">+</span></div>
+        <div class="teaser">Silk, wool, latex, copper coils</div>
+        <div class="cc"><p>Plush TerraPur natural latex in the comfort zone, with the zoned Figure-Sync coil system for support that follows your body.</p></div>
+      </div>
+      <div class="ccard" onclick="this.classList.toggle('open')">
+        <div class="ct"><h4>Setup &amp; Compatibility</h4><span class="pl">+</span></div>
+        <div class="teaser">White-glove in-home, no tools</div>
+        <div class="cc"><p>Delivered flat with professional setup. Works with adjustable bases, platform frames, and box springs.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- lever note -->
+  <div class="note">
+    <h3>How this says "relax, we've got you"</h3>
+    <p>Same brand navy and orange. Rounded corners kept. The calm comes from how the colors are used and the new type.</p>
+    <table>
+      <tr><td>Palette</td><td>Unchanged. Navy as soft tints and airy fields, orange only on the one action.</td></tr>
+      <tr><td>Font</td><td>Fraunces, a warm serif, for headings. Mulish, a light airy sans, for body.</td></tr>
+      <tr><td>Shape</td><td>Generous rounding on cards and pill CTAs, as you liked.</td></tr>
+      <tr><td>Depth</td><td>Soft diffuse shadows instead of hard borders.</td></tr>
+      <tr><td>Motif</td><td>Subtle crescent moon with a slow breathing glow, on brand.</td></tr>
+      <tr><td>Voice</td><td>Reassuring microcopy: "Relax, we've got the rest," "No rushing."</td></tr>
+      <tr><td>Space</td><td>More breathing room and lighter weights throughout.</td></tr>
+    </table>
+    <p style="margin-top:12px;">Production needs licensed fonts (Fraunces and Mulish are free via Google Fonts, both fine to license). Swap suggestions in chat if you want a different pairing.</p>
+  </div>
+
+</div>
+
+<script>
+var ICONS={
+ "store":'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9M4 9v11h16V9M4 9h16M9 20v-6h6v6"/></svg>',
+ "map-pin":'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+ "truck":'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>',
+ "moon":'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+ "users":'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>',
+ "shield":'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+ "tag":'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg>',
+ "card":'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="3"/><line x1="1" y1="10" x2="23" y2="10"/></svg>'
+};
+document.querySelectorAll('[data-ic]').forEach(function(el){var k=el.getAttribute('data-ic'); if(ICONS[k]) el.innerHTML=ICONS[k];});
+function pickSize(el,name){el.parentElement.querySelectorAll('.size').forEach(function(s){s.classList.remove('on');}); el.classList.add('on'); document.getElementById('szName').textContent=name;}
+</script>
+</body>
+</html>
