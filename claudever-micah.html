@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mancini's Sleepworld PDP — Relax, We've Got You</title>
+<title>Mancini's Sleepworld PDP — Rest, Easy!</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Mulish:wght@300;400;500;600;700&display=swap');
 
 :root{
   /* BRAND PALETTE — unchanged */
-  --navy:#1B4D8E;          /* brand navy */
+  --navy:#1B4D8E;          /* brand navy */4:59 PM 6/2/2026
   --cart:#E2622A;          /* brand orange, primary action only */
   /* tints derived from the same navy (not new colors) */
   --tint:#EDF2F9;
@@ -61,10 +61,10 @@ a{color:var(--navy); text-decoration:none;}
 /* identity card */
 .card{margin:16px 14px 0; background:var(--white); border-radius:var(--r); box-shadow:var(--shadow-sm); padding:22px;}
 .brand{font-size:11px; letter-spacing:3px; text-transform:uppercase; color:var(--navy); font-weight:700; opacity:.8;}
-h1{font-family:var(--display); font-weight:400; font-size:27px; line-height:1.18; color:var(--navy); margin:8px 0 8px;}
+h1{font-family:var(--display); font-weight:700; font-size:27px; line-height:1.18; color:var(--navy); margin:8px 0 8px;}
 .rate{color:#E0A21E; font-size:14px; letter-spacing:2px;}
 .rate small{color:var(--muted); letter-spacing:0; font-family:var(--body); font-size:13px;}
-.price{font-family:var(--display); font-size:28px; color:var(--ink); margin-top:14px; font-weight:500;}
+.price{font-family:var(--display); font-size:28px; font-weight:700; color:var(--ink); margin-top:14px;}
 .price .save{font-family:var(--body); font-size:13px; color:var(--cart); font-weight:700; margin-left:6px;}
 .price .msrp{font-family:var(--body); font-size:13px; color:var(--muted); text-decoration:line-through; margin-left:4px;}
 .fin{font-size:13px; color:var(--muted); margin-top:4px;}
@@ -84,7 +84,7 @@ h1{font-family:var(--display); font-weight:400; font-size:27px; line-height:1.18
 
 /* CTAs */
 .cta{display:flex; align-items:center; justify-content:center; gap:8px; width:100%; border-radius:40px; padding:17px; font-size:14px; font-weight:700; letter-spacing:.3px; cursor:pointer; border:1.5px solid transparent; font-family:var(--body);}
-.cta-primary{background:var(--cart); color:#fff; margin-top:18px; box-shadow:0 10px 24px rgba(226,98,42,.28);}
+.cta-primary{background:var(--cart); color:#fff; margin-top:18px; box-shadow:0 10px 24px rgba(226,98,42,.28);background-color:rgba(226,98,42);}
 .cta-ghost{background:#fff; color:var(--navy); border-color:var(--navy); margin-top:10px;}
 
 /* we got you support strip */
@@ -96,6 +96,7 @@ h1{font-family:var(--display); font-weight:400; font-size:27px; line-height:1.18
 /* promise — calm */
 .promise{margin:16px 14px 0; background:#fff; border-radius:var(--r); box-shadow:var(--shadow-sm); padding:24px 20px;}
 .promise .ph{font-family:var(--display); font-weight:400; font-size:23px; text-align:center; color:var(--navy);}
+.ph{font-weight:700;}
 .promise .psub{text-align:center; font-size:12px; color:var(--muted); margin:4px 0 20px;}
 .pgrid{display:grid; grid-template-columns:1fr 1fr; gap:20px 14px;}
 .pitem{text-align:center;}
@@ -141,12 +142,12 @@ h1{font-family:var(--display); font-weight:400; font-size:27px; line-height:1.18
       <div class="badge">Medium · On Sale</div>
       <div class="prod">handcrafted since 1940</div>
     </div>
-
-    <!-- reassurance ribbon -->
+<!-- reassurance ribbon -->
+ <!--   
     <div class="ribbon">
-      <h2>Relax. We've got the rest.</h2>
-      <p>Try it for 120 nights. Free delivery and setup. No pressure to decide.</p>
-    </div>
+      <h2>Rest, Easy! We've got you.</h2>
+      <p>Mancini's Sleepworld guarantees comfort for<br/>365 nights with free delivery and more.</p>
+    </div> -->
 
     <!-- identity -->
     <div class="card">
@@ -154,7 +155,7 @@ h1{font-family:var(--display); font-weight:400; font-size:27px; line-height:1.18
       <h1>Bay Preferred Trinity Medium 15.5&Prime;</h1>
       <div class="rate">★★★★⯨ <small>4.5 · 24 reviews</small></div>
       <div class="price">$3,799.99 <span class="save">Save 10%</span> <span class="msrp">$4,199.99</span></div>
-      <div class="fin">0% APR or as low as $185/mo with Affirm</div>
+      <div class="fin">0% APR or as low as $185/mo with <b>Affirm</b></div>
 
       <div class="hr"></div>
       <div class="sz-label">Size: <span id="szName">TwinXL</span></div>
@@ -180,20 +181,20 @@ h1{font-family:var(--display); font-weight:400; font-size:27px; line-height:1.18
     <!-- we got you support -->
     <div class="support">
       <h3>However you decide, we've got you.</h3>
-      <div class="row"><span data-ic="truck"></span> We deliver it and set it up for you.</div>
-      <div class="row"><span data-ic="moon"></span> Sleep on it for 120 nights, on us.</div>
+      <div class="row"><span data-ic="truck"></span> We deliver it free.</div>
+      <div class="row"><span data-ic="moon"></span> Sleep on it for 365 nights, on us.</div>
       <div class="row"><span data-ic="users"></span> A specialist will walk you through every option.</div>
     </div>
 
     <!-- promise -->
     <div class="promise">
-      <div class="ph">Our Promise to You</div>
-      <div class="psub">Sixty-five years of helping the Bay Area sleep better</div>
+      <div class="ph">Our Rest Easy Promise to You</div>
+      <div class="psub">Helping Nothern California sleep better since 1969</div>
       <div class="pgrid">
-        <div class="pitem"><div class="ring" data-ic="shield"></div><h4>120 Nights</h4><p>365 with a protector</p></div>
-        <div class="pitem"><div class="ring" data-ic="tag"></div><h4>Best Price</h4><p>We match it</p></div>
-        <div class="pitem"><div class="ring" data-ic="truck"></div><h4>Free Delivery</h4><p>White-glove setup</p></div>
-        <div class="pitem"><div class="ring" data-ic="card"></div><h4>Financing</h4><p>0% APR options</p></div>
+        <div class="pitem"><div class="ring" data-ic="shield"></div><h4>365 Nights</h4><p>Comfort Guarantee</p></div>
+        <div class="pitem"><div class="ring" data-ic="tag"></div><h4>Best Price</h4><p>Guarantee</p></div>
+        <div class="pitem"><div class="ring" data-ic="truck"></div><h4>Free Delivery</h4><p>Next-day available</p></div>
+        <div class="pitem"><div class="ring" data-ic="card"></div><h4>Double Warranty</h4><p>2x Manufacturers Warranty</p></div>
       </div>
     </div>
 
@@ -205,8 +206,8 @@ h1{font-family:var(--display); font-weight:400; font-size:27px; line-height:1.18
         <div class="cc"><p>The Aireloom Lift creates a breathable chamber so each layer moves with your body instead of compressing flat. A medium, plush surface rests over responsive coils.</p></div>
       </div>
       <div class="ccard" onclick="this.classList.toggle('open')">
-        <div class="ct"><h4>Best Sleep Match</h4><span class="pl">+</span></div>
-        <div class="teaser">Back and side sleepers, medium feel</div>
+        <div class="ct"><h4>Best SleepMatch</h4><span class="pl">+</span></div>
+        <div class="teaser">Green - Back and side sleepers, medium feel</div>
         <div class="cc"><p>Natural latex and copper micro coils ease shoulder and hip pressure without letting the lumbar sag.</p></div>
       </div>
       <div class="ccard" onclick="this.classList.toggle('open')">
